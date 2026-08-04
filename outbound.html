@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快递管理 · 快递管理系统</title>
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+</head>
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
+  <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="w-9 h-9 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+  </div>
+
+  <div id="app" class="hidden h-screen overflow-hidden">
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-64 -translate-x-full md:translate-x-0 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between overflow-y-auto"></aside>
+    <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/40 z-20 md:hidden"></div>
+
+    <div class="flex flex-col h-full flex-1 min-w-0">
+      <header id="topbar" class="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 flex-shrink-0 fixed top-0 right-0 left-0 md:left-64 z-10"></header>
+      <main class="flex-1 overflow-y-auto mt-16">
+        <div class="container px-4 md:px-6 py-6 mx-auto max-w-7xl page-fade-in">
+
+          <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span class="flex items-center justify-center w-7 h-7 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 flex-shrink-0">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v9a1 1 0 001 1h9zm0 0h4l3-3.5V13a1 1 0 00-1-1h-2"/></svg>
+                </span>
+                <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200">快递管理</h2>
+                <span id="ob-count-badge" class="text-xs text-gray-400"></span>
+              </div>
+              <div class="flex gap-2">
+                <button id="btn-export" class="hidden px-3.5 py-2 text-xs font-medium rounded-md border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">导出 CSV</button>
+                <a href="inbound.html" class="px-3.5 py-2 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">+ 新增入库单</a>
+              </div>
+            </div>
+            <div class="p-5 border-b border-gray-100 dark:border-gray-700">
+              <div id="ob-filter-panel" class="courier-filter-panel">
+                <div class="courier-search-field">
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">综合搜索</label>
+                  <input id="f-q" placeholder="姓名/手机/负责人/单号/地址" class="field" />
+                </div>
+                <div class="filter-status-shortcuts">
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">状态</label>
+                  <div class="flex rounded-md overflow-hidden border border-gray-200 dark:border-gray-600" id="status-btns">
+                    <button type="button" data-status="" class="ob-status-btn flex-1 px-2 py-2.5 text-xs bg-purple-600 text-white">全部</button>
+                    <button type="button" data-status="pending-ship" class="ob-status-btn flex-1 px-2 py-2.5 text-xs text-gray-500 dark:text-gray-300 border-l border-gray-200 dark:border-gray-600">待邮寄</button>
+                    <button type="button" data-status="shipped" class="ob-status-btn flex-1 px-2 py-2.5 text-xs text-gray-500 dark:text-gray-300 border-l border-gray-200 dark:border-gray-600">已邮寄</button>
+                    <button type="button" data-status="exception" class="ob-status-btn flex-1 px-2 py-2.5 text-xs text-gray-500 dark:text-gray-300 border-l border-gray-200 dark:border-gray-600">异常件</button>
+                  </div>
+                </div>
+                <div class="filter-courier-field">
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递公司</label>
+                  <select id="f-courier" class="field"><option value="">全部</option></select>
+                </div>
+                <div class="filter-date-field" id="f-date-field">
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">日期</label>
+                  <div class="filter-date-group">
+                    <select id="f-date-mode" class="field">
+                      <option value="">全部日期</option>
+                      <option value="single">单日</option>
+                      <option value="range">范围</option>
+                    </select>
+                    <input id="f-date-single" type="date" class="field hidden" />
+                    <input id="f-date-start" type="date" class="field hidden" aria-label="开始日期" />
+                    <input id="f-date-end" type="date" class="field hidden" aria-label="结束日期" />
+                  </div>
+                </div>
+                <div class="courier-filter-actions">
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 xl:invisible">操作</label>
+                  <div class="flex gap-2 h-full">
+                    <button id="btn-search" class="flex-1 px-3 py-2.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">搜索</button>
+                    <button id="btn-reset" class="flex-1 px-3 py-2.5 text-sm rounded-md border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">重置</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/20 text-xs">
+              <label class="inline-flex items-center gap-2 text-gray-500 dark:text-gray-400 cursor-pointer">
+                <input type="checkbox" id="ob-select-all-page" class="rounded border-gray-300" />
+                全选本页
+              </label>
+              <span id="ob-selection-info" class="hidden text-purple-600 dark:text-purple-300">
+                已勾选 <span id="ob-selection-count">0</span> 条
+                <button type="button" id="ob-clear-selection" class="ml-1 underline text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">清除</button>
+              </span>
+            </div>
+            <div id="ob-table-wrap" class="overflow-x-auto">
+              <table id="ob-table" class="w-full text-sm text-left">
+                <thead class="bg-gray-50 dark:bg-gray-700/40 text-xs text-gray-500 dark:text-gray-400 uppercase">
+                  <tr>
+                    <th class="px-4 py-3">时间</th>
+                    <th class="px-4 py-3">姓名</th>
+                    <th class="px-4 py-3">手机</th>
+                    <th class="px-4 py-3">快递信息</th>
+                    <th class="px-4 py-3">单号</th>
+                    <th class="px-4 py-3">状态</th>
+                    <th class="px-4 py-3 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="ob-tbody" class="divide-y divide-gray-100 dark:divide-gray-700"></tbody>
+              </table>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100 dark:border-gray-700">
+              <div class="text-xs text-gray-400" id="ob-summary">共 0 条</div>
+              <div class="flex items-center gap-2">
+                <select id="ob-limit" class="field !py-1.5">
+                  <option value="20">20/页</option>
+                  <option value="50">50/页</option>
+                  <option value="100">100/页</option>
+                </select>
+                <div id="ob-pagination" class="flex items-center gap-1"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 导出 CSV 弹窗 -->
+  <div id="export-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-export></div>
+    <div class="modal-panel relative w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 shadow-xl p-6">
+      <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3">导出 CSV</h3>
+
+      <div class="mb-3 pb-3 border-b border-gray-100 dark:border-gray-700">
+        <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1.5">导出范围</label>
+        <div class="space-y-1.5">
+          <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input type="radio" name="export-scope" id="export-scope-filtered" value="filtered" checked class="border-gray-300" />
+            当前筛选的全部结果
+          </label>
+          <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input type="radio" name="export-scope" id="export-scope-page" value="page" class="border-gray-300" />
+            仅当前页（<span id="export-page-count">0</span> 条）
+          </label>
+          <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input type="radio" name="export-scope" id="export-scope-selected" value="selected" class="border-gray-300" />
+            仅已勾选（<span id="export-selected-count">0</span> 条）
+          </label>
+        </div>
+        <div id="export-limit-box" class="flex items-center gap-2 mt-2">
+          <label for="export-limit" class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">最多导出</label>
+          <input type="number" id="export-limit" min="1" max="9999" placeholder="不填=全部" class="field !py-1.5" />
+          <span class="text-xs text-gray-400">条</span>
+        </div>
+      </div>
+
+      <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-2 pb-2 border-b border-gray-100 dark:border-gray-700">
+        <input type="checkbox" id="export-select-all" class="rounded border-gray-300" checked />
+        全选列
+      </label>
+      <div id="export-columns" class="grid grid-cols-2 gap-x-3 gap-y-2 max-h-56 overflow-y-auto mb-4"></div>
+      <div class="flex justify-end gap-2">
+        <button type="button" data-close-export class="px-4 py-2 text-sm rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">取消</button>
+        <button id="btn-confirm-export" class="px-4 py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 处理/编辑弹窗 -->
+  <div id="fill-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4 py-8 overflow-y-auto">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/50" data-close-fill></div>
+    <div class="modal-panel relative w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl p-6 my-auto max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 flex-shrink-0">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v9a1 1 0 001 1h9zm0 0h4l3-3.5V13a1 1 0 00-1-1h-2"/></svg>
+        </span>
+        <h3 id="fill-modal-title" class="text-base font-semibold text-gray-800 dark:text-gray-100">处理快递</h3>
+      </div>
+      <form id="fill-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <input type="hidden" id="fl-id" />
+        <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">姓名 <span class="text-red-500">*</span></label><input id="fl-name" required class="field" /></div>
+        <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">手机号</label><input id="fl-phone" inputmode="numeric" class="field" /></div>
+        <div class="sm:col-span-2"><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">邮寄地址</label><input id="fl-address" class="field" /></div>
+
+        <!-- 负责人/分类/快递公司/服务类型：两两一行，手机和桌面都一致（对齐 v5） -->
+        <div class="sm:col-span-2 grid grid-cols-2 gap-4">
+          <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">负责人</label><select id="fl-manager" class="field"><option value="">未指定</option></select></div>
+          <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">分类</label><select id="fl-category" class="field"><option value="cn">国内</option><option value="kr">韩国</option></select></div>
+          <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递公司</label><select id="fl-courier" class="field"><option value="">未指定</option></select></div>
+          <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">服务类型</label><select id="fl-service" class="field"><option value="普通">普通</option></select></div>
+        </div>
+
+        <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">邮寄状态</label>
+          <select id="fl-status" class="field">
+            <option value="pending-ship">待邮寄</option>
+            <option value="shipped">已邮寄</option>
+            <option value="exception">异常件</option>
+          </select>
+        </div>
+        <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">客户可见备注</label><input id="fl-note" class="field" /></div>
+        <div class="sm:col-span-2"><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">内部备注</label><textarea id="fl-internal-note" rows="2" class="field"></textarea></div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递单号 <span id="fl-tracking-required" class="text-red-500">*</span></label>
+          <input id="fl-tracking" class="field font-mono" placeholder="4-40 位字符，或在下方上传面单图片自动识别" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">面单 / 包裹图片</label>
+          <div id="fl-images-dropzone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center text-xs text-gray-400 cursor-pointer transition-colors hover:border-purple-400 hover:text-purple-500">
+            <svg class="w-5 h-5 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            拖拽图片到此处，或点击选择图片<br />会自动识别面单条形码并填入单号
+          </div>
+          <div class="flex items-center gap-3 mt-2">
+            <button type="button" id="fl-btn-camera" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex-shrink-0">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              拍照上传
+            </button>
+            <span id="fl-images-hint" class="text-xs text-gray-400">未选择文件</span>
+          </div>
+          <input id="fl-images-input" type="file" accept="image/*" multiple class="hidden" />
+          <div id="fl-images-preview" class="flex flex-wrap gap-2 mt-2"></div>
+        </div>
+        <div class="sm:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+          <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <input type="checkbox" id="fl-auto-next" class="rounded border-gray-300" checked />
+            保存后自动跳转下一条待邮寄
+          </label>
+          <div class="flex gap-2">
+            <button type="button" data-close-fill class="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 text-sm rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">取消</button>
+            <button type="submit" class="flex-1 sm:flex-none px-4 py-2.5 sm:py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">保存</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 拍照弹窗：实时摄像头预览 + 拍摄，供"拍照上传"和行内单号扫码图标共用 -->
+  <div id="camera-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-8">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/85" data-close-camera></div>
+    <div class="modal-panel relative w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">拍照</h3>
+        <button type="button" data-close-camera class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <video id="camera-video" class="w-full rounded-md bg-black aspect-[3/4] sm:aspect-video max-h-[75vh] object-cover" playsinline muted></video>
+      <button type="button" id="camera-btn-shoot" class="mt-3 w-full px-3 py-3 text-sm font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">拍摄</button>
+    </div>
+  </div>
+
+  <!-- 行内单号扫码：点表格里相机图标弹出的小面板，可拖拽/选图，也可以拍照 -->
+  <div id="row-scan-modal" class="hidden fixed inset-0 z-[65] flex items-center justify-center px-4 py-8">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/70" data-close-row-scan></div>
+    <div class="modal-panel relative w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 shadow-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">扫码识别单号</h3>
+        <button type="button" data-close-row-scan class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="row-scan-dropzone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center text-xs text-gray-400 cursor-pointer transition-colors hover:border-purple-400 hover:text-purple-500">
+        <svg class="w-5 h-5 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        拖拽图片到此处，或点击选择图片
+      </div>
+      <input id="row-scan-file-input" type="file" accept="image/*" class="hidden" />
+      <button type="button" id="row-scan-btn-camera" class="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        拍照
+      </button>
+      <p class="mt-2 text-[11px] text-center text-gray-400">识别成功后照片会保存到该记录的面单/包裹图片</p>
+    </div>
+  </div>
+
+  <!-- 图片原图预览 -->
+  <div id="lightbox-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-gray-900/90 p-4" data-close-lightbox>
+    <button type="button" data-close-lightbox class="absolute top-4 right-4 text-white/80 hover:text-white">
+      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <img id="lightbox-img" class="max-w-full max-h-full object-contain rounded-md" />
+  </div>
+
+  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.5rem .75rem;font-size:.875rem;background:transparent}
+  html.dark .field{border-color:rgb(75 85 99);color:rgb(243 244 246);background:rgb(55 65 81)}
+  .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}
+  .ob-status-btn.active{background:rgb(147 51 234);color:#fff}
+  .ob-status-btn{white-space:nowrap}
+
+  /* 筛选面板网格 — 复刻自 v5 adminlte-app.css #view-outbound .courier-filter-panel */
+  .courier-filter-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.625rem;align-items:end}
+  .courier-filter-panel > div{min-width:0}
+  .courier-search-field{grid-column:1 / -1}
+  .filter-date-field{grid-column:1 / -1}
+  .courier-filter-actions{grid-column:1 / -1}
+  /* 状态区 4 个按钮(全部/待邮寄/已邮寄/异常件)中文文案挤不进 2 列网格里的半宽格子，
+     会被裁切——移动端让它单独占一整行，桌面端（>=1200px）再回到跟其它字段同排。 */
+  .filter-status-shortcuts{grid-column:1 / -1}
+  .filter-date-group{display:flex;flex-wrap:wrap;gap:.5rem}
+  .filter-date-group > select,.filter-date-group > input{flex:1 1 100%;min-width:0}
+
+  @media (min-width:1200px){
+    /* 状态区从 3 个按钮(全部/待邮寄/已邮寄)变成 4 个(+异常件)后原来 138px 的最小宽度不够，
+       文字会被挤到换行——加宽这一列，从综合搜索列匀一点宽度过来。 */
+    .courier-filter-panel{
+      grid-template-columns:minmax(260px,1.05fr) minmax(210px,.65fr) minmax(168px,.55fr) minmax(210px,.7fr) minmax(136px,.4fr);
+    }
+    .courier-filter-panel.date-expanded{
+      grid-template-columns:minmax(220px,.85fr) minmax(210px,.65fr) minmax(160px,.55fr) minmax(280px,.9fr) minmax(118px,.35fr) !important;
+    }
+    .courier-search-field,.filter-date-field,.courier-filter-actions,.filter-status-shortcuts{grid-column:auto}
+    .filter-date-group > select,.filter-date-group > input{flex:1 1 0;width:auto}
+  }
+
+  /* 移动端表格 → 卡片，复刻自 v5 adminlte-app.css #view-outbound #outbound-tbody（含暗色适配）。
+     用 @container 而不是 @media：媒体查询只看整个视口宽度，不知道侧边栏已经吃掉了 256px，
+     导致视口 900-1150px 之间时表格还在用表格布局，但可用宽度其实已经不够，7 列全部挤到换行。
+     容器查询直接量表格外层容器的实际可用宽度，跟侧边栏占多少无关，不会有这个误判。 */
+  #ob-table-wrap{container-type:inline-size}
+  @container (max-width:900px){
+    #ob-table-wrap{overflow:visible}
+    #ob-table thead{display:none}
+    #ob-tbody{display:grid;gap:.75rem}
+    #ob-tbody > tr{
+      display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.65rem .75rem;
+      padding:.875rem;border:1px solid rgb(229 231 235) !important;border-top-width:1px !important;border-radius:.95rem;
+      background:#fff;box-shadow:0 .55rem 1.35rem rgba(15,23,42,.06);
+    }
+    html.dark #ob-tbody > tr{background:rgb(31 41 55);border-color:rgb(55 65 81);box-shadow:0 .55rem 1.35rem rgba(0,0,0,.25)}
+    #ob-tbody > tr:hover{background:#fff}
+    html.dark #ob-tbody > tr:hover{background:rgb(31 41 55)}
+    #ob-tbody > tr > td{display:block;padding:0 !important;border:0 !important;white-space:normal !important}
+
+    #ob-tbody td[data-label="姓名"]{grid-column:1;grid-row:1;color:rgb(17 24 39);font-size:1.05rem;font-weight:800;line-height:1.2}
+    html.dark #ob-tbody td[data-label="姓名"]{color:rgb(243 244 246)}
+
+    #ob-tbody td[data-label="状态"]{grid-column:2;grid-row:1;justify-self:end}
+    #ob-tbody td[data-label="状态"] .status-badge{min-width:4.25rem;justify-content:center;padding:.35rem .55rem;font-weight:700}
+
+    #ob-tbody td[data-label="单号"]{
+      grid-column:1 / -1;grid-row:2;padding:.7rem .75rem !important;
+      border:1px solid rgba(217,119,6,.18) !important;border-radius:.75rem;
+      background:linear-gradient(135deg,#fff7ed,#f8fbff);color:rgb(15 23 42);
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1rem !important;font-weight:800;letter-spacing:.02em;
+    }
+    html.dark #ob-tbody td[data-label="单号"]{background:linear-gradient(135deg,rgba(217,119,6,.14),rgba(55,65,81,.4));color:rgb(243 244 246)}
+    #ob-tbody td[data-label="单号"]::before{content:"快递单号";display:block;margin-bottom:.2rem;color:#9a5a14;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:0}
+    html.dark #ob-tbody td[data-label="单号"]::before{color:rgb(251 191 36)}
+
+    #ob-tbody td[data-label="手机"],#ob-tbody td[data-label="快递信息"],#ob-tbody td[data-label="时间"]{color:rgb(100 116 139);font-size:.78rem}
+    html.dark #ob-tbody td[data-label="手机"],html.dark #ob-tbody td[data-label="快递信息"],html.dark #ob-tbody td[data-label="时间"]{color:rgb(156 163 175)}
+    #ob-tbody td[data-label="手机"]{grid-column:1;grid-row:3}
+    #ob-tbody td[data-label="快递信息"]{grid-column:2;grid-row:3;justify-self:end;min-width:0;text-align:right}
+    #ob-tbody td[data-label="时间"]{grid-column:1 / -1;grid-row:4;font-size:.72rem !important}
+    #ob-tbody td[data-label="手机"]::before,#ob-tbody td[data-label="时间"]::before{display:inline-block;margin-right:.25rem;color:rgb(148 163 184);font-weight:700}
+    #ob-tbody td[data-label="手机"]::before{content:"手机"}
+    #ob-tbody td[data-label="时间"]::before{content:"录入"}
+
+    #ob-tbody .courier-info-name{display:inline;font-size:.78rem;font-weight:700}
+    #ob-tbody .courier-info-service{display:inline;margin-top:0;font-size:.74rem}
+    #ob-tbody .courier-info-service:not(:empty)::before{content:" / "}
+
+    #ob-tbody td[data-label="操作"]{grid-column:1 / -1;grid-row:5;padding-top:.15rem !important}
+    #ob-tbody td[data-label="操作"] .record-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+    #ob-tbody td[data-label="操作"] .record-actions button{width:100%;min-height:2.35rem;justify-content:center;display:flex;align-items:center;border:1px solid rgb(229 231 235);border-radius:.5rem}
+    html.dark #ob-tbody td[data-label="操作"] .record-actions button{border-color:rgb(75 85 99)}
+  }</style>
+
+  <script src="assets/js/api-client.js?v=20260804a"></script>
+  <script src="assets/js/perm.js?v=20260804a"></script>
+  <script src="assets/js/auth.js?v=20260804a"></script>
+  <script src="assets/js/nav.js?v=20260804a"></script>
+  <script src="assets/vendor/zxing/zxing.min.js?v=20260804a"></script>
+  <script src="assets/js/barcode-scan.js?v=20260804a"></script>
+  <script src="assets/js/camera-capture.js?v=20260804a"></script>
+  <script src="assets/js/lightbox.js?v=20260804a"></script>
+  <script src="assets/js/outbound.js?v=20260804a"></script>
+  <script>
+    document.addEventListener('auth:ready', () => { Nav.renderShell('outbound.html'); initOutbound(); });
+    Auth.protectPage();
+  </script>
+</body>
+</html>

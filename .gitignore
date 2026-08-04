@@ -1,0 +1,9 @@
+# 真实业务数据 / 客户隐私，不能进仓库
+/data/*.db
+/data/*.db-journal
+/uploads/
+
+# 常见系统/编辑器垃圾文件
+.DS_Store
+Thumbs.db
+*.log

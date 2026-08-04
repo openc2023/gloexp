@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快递查询</title>
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+</head>
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900 min-h-screen flex flex-col">
+
+  <header class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
+    <div class="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
+      <a href="track.html" class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-600 text-white font-bold text-sm">快</span>
+        <span class="text-base font-semibold text-gray-800 dark:text-gray-100">快递查询</span>
+      </a>
+      <div class="flex items-center gap-3">
+        <a href="login.html" class="text-xs text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-300">管理后台</a>
+        <button id="btn-theme" class="p-2 rounded-md text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" title="切换主题">
+          <svg id="icon-sun" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.02 0l-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg id="icon-moon" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 1020.354 15.354z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1">
+    <div class="max-w-3xl mx-auto px-4 py-10">
+
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 rounded-full px-3 py-1 mb-3">
+          <span class="w-1.5 h-1.5 rounded-full bg-purple-600"></span> 快递查询系统
+        </div>
+        <h1 class="text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-2">查询您的快递</h1>
+        <p class="text-sm text-gray-400">输入您的姓名与手机尾号（后4位），或直接输入快递单号查询</p>
+      </div>
+
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 sm:p-6">
+        <div class="flex gap-1 mb-5 border-b border-gray-200 dark:border-gray-700">
+          <button id="tab-name" class="track-tab px-4 py-2.5 text-sm font-medium border-b-2 border-purple-600 text-purple-600">姓名 + 手机尾号</button>
+          <button id="tab-tracking" class="track-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400">快递单号</button>
+        </div>
+
+        <div id="panel-name">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">姓名</label>
+              <input id="q-name" class="field" placeholder="请输入姓名" autocomplete="name" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">手机号后4位</label>
+              <input id="q-phone" class="field" placeholder="请输入手机后4位" maxlength="4" inputmode="numeric" autocomplete="off" />
+            </div>
+          </div>
+          <button id="btn-search-name" class="w-full py-2.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white font-medium">查询</button>
+        </div>
+
+        <div id="panel-tracking" class="hidden">
+          <div class="mb-4">
+            <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递单号</label>
+            <input id="q-tracking" class="field font-mono" placeholder="输入快递单号直接查询" autocomplete="off" spellcheck="false" />
+          </div>
+          <button id="btn-search-tracking" class="w-full py-2.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white font-medium">查询</button>
+        </div>
+      </div>
+
+      <div id="results-section" class="hidden mt-6">
+        <div id="results-header" class="hidden flex items-center justify-between mb-3">
+          <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">查询结果</span>
+          <span id="results-count" class="text-xs text-gray-400"></span>
+        </div>
+        <div id="results-list" class="space-y-3"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="border-t border-gray-100 dark:border-gray-700 py-6">
+    <p class="text-center text-xs text-gray-400">© 2026 快递查询系统</p>
+  </footer>
+
+  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.625rem .75rem;font-size:.875rem;background:transparent}
+  html.dark .field{border-color:rgb(75 85 99);color:rgb(243 244 246);background:rgb(55 65 81)}
+  .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}
+  .track-tab.active{border-color:rgb(147 51 234);color:rgb(147 51 234)}</style>
+
+  <script src="assets/js/api-client.js?v=20260804a"></script>
+  <script src="assets/js/track.js?v=20260804a"></script>
+</body>
+</html>

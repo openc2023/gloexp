@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新增入库单 · 快递管理系统</title>
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+</head>
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
+  <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="w-9 h-9 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+  </div>
+
+  <div id="app" class="hidden h-screen overflow-hidden">
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-64 -translate-x-full md:translate-x-0 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between overflow-y-auto"></aside>
+    <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/40 z-20 md:hidden"></div>
+
+    <div class="flex flex-col h-full flex-1 min-w-0">
+      <header id="topbar" class="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 flex-shrink-0 fixed top-0 right-0 left-0 md:left-64 z-10"></header>
+      <main class="flex-1 overflow-y-auto mt-16">
+        <div class="container px-4 py-5 sm:px-6 sm:py-6 mx-auto max-w-7xl page-fade-in space-y-4 sm:space-y-6">
+
+          <!-- 提示：录入后去「快递管理」处理 -->
+          <div class="text-xs text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 rounded-md px-3 py-2">
+            录入后状态自动设为「待邮寄」，填写快递单号请前往 <a href="outbound.html" class="underline font-medium">快递管理</a>。
+          </div>
+
+          <!-- 智能解析 -->
+          <div id="parse-card" class="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 flex-shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              </span>
+              <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能解析</h2>
+            </div>
+            <p class="text-xs text-gray-400 mb-3">粘贴客户发来的原始文本（姓名/电话/地址/负责人/快递公司），自动识别并填充下方表单</p>
+            <textarea id="parse-text" rows="3" placeholder="例如：姓名：张三 电话：13812345678 邮寄地址：广东省深圳市南山区xxx路xx号 负责人：李四 顺丰 特快"
+              class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+            <div class="mt-3">
+              <button id="btn-parse" class="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">智能解析</button>
+            </div>
+          </div>
+
+          <!-- 新增入库单表单 -->
+          <div id="create-card" class="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-5">
+            <div class="flex items-center gap-2 mb-4">
+              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 flex-shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0l-2.3 2.3a1 1 0 01-.7.3H9a1 1 0 01-.7-.3L6 13m14 0h-3.6a1 1 0 00-.7.3l-1.4 1.4a1 1 0 01-.7.3h-2.2a1 1 0 01-.7-.3l-1.4-1.4a1 1 0 00-.7-.3H3"/></svg>
+              </span>
+              <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-200">新增入库单</h2>
+            </div>
+            <form id="ib-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">姓名 <span class="text-red-500">*</span></label>
+                <input id="ib-name" required class="field" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">手机号</label>
+                <input id="ib-phone" inputmode="numeric" class="field" />
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">邮寄地址</label>
+                <input id="ib-address" class="field" />
+              </div>
+
+              <!-- 负责人/分类/快递公司/服务类型：两两一行，手机和桌面都一致（对齐 v5） -->
+              <div class="sm:col-span-2 grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                    负责人 <span id="ib-manager-lock-hint" class="hidden text-gray-400 font-normal">（已锁定为自己）</span>
+                  </label>
+                  <select id="ib-manager" class="field"><option value="">未指定</option></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">分类</label>
+                  <select id="ib-category" class="field">
+                    <option value="cn">国内</option>
+                    <option value="kr">韩国</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递公司</label>
+                  <select id="ib-courier" class="field"><option value="">未指定</option></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">服务类型</label>
+                  <select id="ib-service" class="field"><option value="普通">普通</option></select>
+                </div>
+              </div>
+
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">快递单号（可先留空）</label>
+                <input id="ib-tracking" placeholder="可先留空，或在下方上传图片自动识别" class="field" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">客户可见备注</label>
+                <input id="ib-note" class="field" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">内部备注（仅内部可见）</label>
+                <textarea id="ib-internal-note" rows="2" class="field"></textarea>
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">图片</label>
+                <div id="ib-images-dropzone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center text-xs text-gray-400 cursor-pointer transition-colors hover:border-purple-400 hover:text-purple-500">
+                  <svg class="w-5 h-5 mx-auto mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  拖拽图片到此处，或点击选择图片<br />会自动识别面单条形码并填入单号
+                </div>
+                <div class="flex items-center gap-3 mt-2">
+                  <button type="button" id="ib-btn-camera" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex-shrink-0">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    拍照上传
+                  </button>
+                  <span id="ib-images-hint" class="text-xs text-gray-400">未选择文件</span>
+                </div>
+                <input id="ib-images-input" type="file" accept="image/*" multiple class="hidden" />
+                <div id="ib-images-preview" class="flex flex-wrap gap-2 mt-2"></div>
+              </div>
+
+              <div class="sm:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <button type="reset" class="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">重置</button>
+                <button type="submit" class="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">确认入库</button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 拍照弹窗：实时摄像头预览 + 拍摄 -->
+  <div id="camera-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-8">
+    <div class="modal-backdrop absolute inset-0 bg-gray-900/85" data-close-camera></div>
+    <div class="modal-panel relative w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl p-3">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">拍照</h3>
+        <button type="button" data-close-camera class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <video id="camera-video" class="w-full rounded-md bg-black aspect-[3/4] sm:aspect-video max-h-[75vh] object-cover" playsinline muted></video>
+      <button type="button" id="camera-btn-shoot" class="mt-3 w-full px-3 py-3 text-sm font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">拍摄</button>
+    </div>
+  </div>
+
+  <!-- 图片原图预览 -->
+  <div id="lightbox-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center bg-gray-900/90 p-4" data-close-lightbox>
+    <button type="button" data-close-lightbox class="absolute top-4 right-4 text-white/80 hover:text-white">
+      <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <img id="lightbox-img" class="max-w-full max-h-full object-contain rounded-md" />
+  </div>
+
+  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.625rem .75rem;font-size:.875rem;background:transparent}
+  html.dark .field{border-color:rgb(75 85 99);color:rgb(243 244 246);background:rgb(55 65 81)}
+  .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}</style>
+
+  <script src="assets/js/api-client.js?v=20260804a"></script>
+  <script src="assets/js/perm.js?v=20260804a"></script>
+  <script src="assets/js/auth.js?v=20260804a"></script>
+  <script src="assets/js/nav.js?v=20260804a"></script>
+  <script src="assets/vendor/zh-address-parse/zh-address-parse.min.js?v=20260804a"></script>
+  <script src="assets/vendor/zxing/zxing.min.js?v=20260804a"></script>
+  <script src="assets/js/barcode-scan.js?v=20260804a"></script>
+  <script src="assets/js/camera-capture.js?v=20260804a"></script>
+  <script src="assets/js/lightbox.js?v=20260804a"></script>
+  <script src="assets/js/inbound.js?v=20260804a"></script>
+  <script>
+    document.addEventListener('auth:ready', () => { Nav.renderShell('inbound.html'); initInbound(); });
+    Auth.protectPage();
+  </script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>快递商管理 · 快递管理系统</title>
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+</head>
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
+  <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="w-9 h-9 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+  </div>
+
+  <div id="app" class="hidden h-screen overflow-hidden">
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-64 -translate-x-full md:translate-x-0 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between overflow-y-auto"></aside>
+    <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/40 z-20 md:hidden"></div>
+
+    <div class="flex flex-col h-full flex-1 min-w-0">
+      <header id="topbar" class="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 flex-shrink-0 fixed top-0 right-0 left-0 md:left-64 z-10"></header>
+      <main class="flex-1 overflow-y-auto mt-16">
+        <div class="container px-4 md:px-6 py-6 mx-auto max-w-7xl page-fade-in">
+
+          <div id="cr-no-access" class="hidden bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-10 text-center">
+            <p class="text-sm text-gray-500 dark:text-gray-400">你没有「快递商管理」的查看权限，请联系管理员开通 couriers:view 权限。</p>
+          </div>
+
+          <div id="cr-page-content" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                  <thead class="bg-gray-50 dark:bg-gray-700/40 text-xs text-gray-500 dark:text-gray-400 uppercase">
+                    <tr><th class="px-4 py-3">名称</th><th class="px-4 py-3">分类</th><th class="px-4 py-3">服务类型</th><th class="px-4 py-3">查询地址</th><th class="px-4 py-3 text-right">操作</th></tr>
+                  </thead>
+                  <tbody id="cr-tbody" class="divide-y divide-gray-100 dark:divide-gray-700"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 h-fit">
+              <h3 id="cr-form-title" class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">新增快递商</h3>
+              <form id="cr-form" class="space-y-3">
+                <input type="hidden" id="cr-id" />
+                <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">名称</label><input id="cr-name" required class="field" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">分类</label>
+                  <select id="cr-category" class="field"><option value="cn">国内</option><option value="kr">韩国</option></select>
+                </div>
+                <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">追踪链接模板</label>
+                  <input id="cr-tracking-url" placeholder="含 {num} 占位符，例如 https://x.com/query?no={num}" class="field" />
+                </div>
+                <div><label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">服务类型（逗号分隔）</label>
+                  <input id="cr-service-types" placeholder="普通,特快" class="field" />
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                  <button type="button" id="cr-form-cancel" class="hidden px-3 py-1.5 text-sm rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">取消</button>
+                  <button type="submit" class="px-4 py-1.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">保存</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.5rem .75rem;font-size:.875rem;background:transparent}
+  html.dark .field{border-color:rgb(75 85 99);color:rgb(243 244 246);background:rgb(55 65 81)}
+  .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}</style>
+
+  <script src="assets/js/api-client.js?v=20260804a"></script>
+  <script src="assets/js/perm.js?v=20260804a"></script>
+  <script src="assets/js/auth.js?v=20260804a"></script>
+  <script src="assets/js/nav.js?v=20260804a"></script>
+  <script src="assets/js/couriers.js?v=20260804a"></script>
+  <script>
+    document.addEventListener('auth:ready', () => { Nav.renderShell('couriers.html'); initCouriers(); });
+    Auth.protectPage();
+  </script>
+</body>
+</html>

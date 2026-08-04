@@ -1,0 +1,22 @@
+# ── 禁止直接访问数据库文件 ──────────────────────────────────
+<FilesMatch "\.db$">
+  Require all denied
+</FilesMatch>
+
+# ── 禁止列目录 ───────────────────────────────────────────────
+Options -Indexes
+
+# ── 禁止访问隐藏文件 ─────────────────────────────────────────
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# ── data/ 目录完全禁止外部访问 ───────────────────────────────
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^data/ - [F,L]
+  RewriteRule ^uploads/.*\.php$ - [F,L]
+</IfModule>
+
+# ── 字符集 ───────────────────────────────────────────────────
+AddDefaultCharset UTF-8

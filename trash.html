@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回收站 · 快递管理系统</title>
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+</head>
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
+  <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div class="w-9 h-9 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+  </div>
+
+  <div id="app" class="hidden h-screen overflow-hidden">
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-64 -translate-x-full md:translate-x-0 bg-white dark:bg-gray-800 border-r border-gray-100 dark:border-gray-700 flex flex-col justify-between overflow-y-auto"></aside>
+    <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/40 z-20 md:hidden"></div>
+
+    <div class="flex flex-col h-full flex-1 min-w-0">
+      <header id="topbar" class="h-16 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 flex-shrink-0 fixed top-0 right-0 left-0 md:left-64 z-10"></header>
+      <main class="flex-1 overflow-y-auto mt-16">
+        <div class="container px-4 md:px-6 py-6 mx-auto max-w-7xl page-fade-in">
+
+          <div class="mb-4 text-xs text-gray-400 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded-md px-3 py-2 inline-block">
+            已删除的记录保留 2 个月，超过 2 个月将被系统自动彻底清除（含关联图片）。
+          </div>
+
+          <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left">
+                <thead class="bg-gray-50 dark:bg-gray-700/40 text-xs text-gray-500 dark:text-gray-400 uppercase">
+                  <tr>
+                    <th class="px-4 py-3">类型</th>
+                    <th class="px-4 py-3">姓名</th>
+                    <th class="px-4 py-3">手机</th>
+                    <th class="px-4 py-3">快递公司</th>
+                    <th class="px-4 py-3">状态</th>
+                    <th class="px-4 py-3">删除时间</th>
+                    <th class="px-4 py-3">到期清除</th>
+                    <th class="px-4 py-3 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="tr-tbody" class="divide-y divide-gray-100 dark:divide-gray-700"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/js/api-client.js?v=20260804a"></script>
+  <script src="assets/js/perm.js?v=20260804a"></script>
+  <script src="assets/js/auth.js?v=20260804a"></script>
+  <script src="assets/js/nav.js?v=20260804a"></script>
+  <script src="assets/js/trash.js?v=20260804a"></script>
+  <script>
+    document.addEventListener('auth:ready', () => { Nav.renderShell('trash.html'); initTrash(); });
+    Auth.protectPage();
+  </script>
+</body>
+</html>
