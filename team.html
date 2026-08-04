@@ -143,9 +143,13 @@
               </div>
               <div id="update-status" class="text-xs text-gray-400 mt-2">点击"检查更新"查看当前版本状态</div>
 
-              <div id="update-baseline-box" class="hidden mt-3 text-xs bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded-md px-3 py-2">
-                本机还没有记录当前版本号。如果当前代码就是仓库里的最新代码（比如刚部署/刚建好仓库），点这里把它标记为基线，之后才能正确判断"有没有新版本"。
-                <button id="btn-set-baseline" class="mt-2 block underline font-medium">标记当前代码为最新版本</button>
+              <div id="update-baseline-box" class="hidden mt-3 bg-amber-50 dark:bg-amber-500/10 rounded-md px-3 py-3">
+                <p class="text-xs text-amber-700 dark:text-amber-300">本机还没有记录当前版本号（通常是因为当年是手动拷贝文件部署的，不是从仓库拉的）。为了保证版本判断准确，建议直接执行一次更新，会把本机代码换成仓库里确认无误的最新版本——不会影响数据库和已上传的图片。</p>
+                <button id="btn-do-update-from-baseline" class="mt-3 px-4 py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">立即更新到最新版本（推荐）</button>
+                <p class="mt-3 text-[11px] text-gray-400">
+                  只有你能 100% 确认本机代码文件跟仓库最新提交完全一致时才用这个——它只是记录一个版本号，不会真的检查或替换任何文件，用错了会导致以后一直误判"已是最新版本"：
+                  <button id="btn-set-baseline" class="underline">标记当前代码为最新版本（不推荐，谨慎使用）</button>
+                </p>
               </div>
 
               <div id="update-available-box" class="hidden mt-3 bg-purple-50 dark:bg-purple-500/10 rounded-md px-3 py-3">
@@ -239,7 +243,7 @@
   <script src="assets/js/perm.js?v=20260804b"></script>
   <script src="assets/js/auth.js?v=20260804b"></script>
   <script src="assets/js/nav.js?v=20260804d"></script>
-  <script src="assets/js/team.js?v=20260804b"></script>
+  <script src="assets/js/team.js?v=20260804h"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('team.html'); initTeam(); });
     Auth.protectPage();

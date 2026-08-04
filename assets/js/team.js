@@ -579,9 +579,10 @@ async function setUpdateBaseline() {
   } catch (e) { /* toast shown */ }
 }
 
-async function doSystemUpdate() {
+async function doSystemUpdate(btnId) {
   if (!confirm('确认立即更新？会自动备份当前代码，更新过程中请勿关闭页面。')) return;
-  const btn = document.getElementById('btn-do-update');
+  const btn = document.getElementById(btnId || 'btn-do-update');
+  const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = '更新中...';
   try {
@@ -592,7 +593,7 @@ async function doSystemUpdate() {
     /* toast shown */
   } finally {
     btn.disabled = false;
-    btn.textContent = '立即更新';
+    btn.textContent = originalText;
   }
 }
 
@@ -652,7 +653,8 @@ async function initTeam() {
 
   document.getElementById('btn-check-update')?.addEventListener('click', loadUpdateStatus);
   document.getElementById('btn-set-baseline')?.addEventListener('click', setUpdateBaseline);
-  document.getElementById('btn-do-update')?.addEventListener('click', doSystemUpdate);
+  document.getElementById('btn-do-update')?.addEventListener('click', () => doSystemUpdate('btn-do-update'));
+  document.getElementById('btn-do-update-from-baseline')?.addEventListener('click', () => doSystemUpdate('btn-do-update-from-baseline'));
 
   if (hasPerm('team:accounts_view')) await Promise.all([loadAccounts(), loadGroups()]);
   if (hasPerm('team:groups_view')) { await loadPermsMeta(); await loadTemplates(); if (!TEAM.groups.length) await loadGroups(); }
