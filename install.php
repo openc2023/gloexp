@@ -250,7 +250,7 @@ input:focus{border-color:#2563eb}
         <path d="M13 4.5L8 2 3 4.5v4c0 2.8 2 5.3 5 6 3-0.7 5-3.2 5-6v-4z"/>
       </svg>
     </div>
-    <h1>环球移动快递系统</h1>
+    <h1>环球寄件</h1>
     <p class="sub">系统初始化向导</p>
   </div>
 

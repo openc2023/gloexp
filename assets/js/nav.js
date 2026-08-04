@@ -61,7 +61,7 @@
       <div class="py-4 text-gray-500 dark:text-gray-300">
         <a href="index.html" class="flex items-center gap-2 px-6 mb-6">
           <img src="assets/glo-1.svg" alt="环球移动" class="w-8 h-8 object-contain flex-shrink-0" />
-          <span class="text-base font-semibold text-gray-800 dark:text-gray-100">环球移动快递系统</span>
+          <span class="text-base font-semibold text-gray-800 dark:text-gray-100">环球寄件</span>
         </a>
         <ul class="mt-2">${items}</ul>
         ${extraItems ? `<ul class="mt-2 pt-2 mx-4 border-t border-gray-100 dark:border-gray-700">${extraItems}</ul>` : ''}
