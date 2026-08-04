@@ -248,11 +248,23 @@ async function runSmartParse() {
   if (merged.name) document.getElementById('ib-name').value = merged.name;
   if (merged.phone) document.getElementById('ib-phone').value = merged.phone;
   if (merged.address) document.getElementById('ib-address').value = merged.address;
-  if (serverResult.manager_id) {
-    document.getElementById('ib-manager').value = serverResult.manager_id;
-  } else if (serverResult.manager_name) {
-    const m = IB.managers.find((mm) => mm.username === serverResult.manager_name);
-    if (m) document.getElementById('ib-manager').value = m.id;
+
+  // 数据范围是"仅自己"的账号，负责人下拉是锁死显示自己的——但那只是 disabled，
+  // 挡不住 JS 直接改 .value。之前这里不管数据范围，只要粘贴文本里识别出"负责人：
+  // 某某"就会把负责人换成别人，提交时又会被后端 manager_allowed_in_inbound_scope
+  // 正确拦下来（这本身没错，是权限校验在起作用），但用户自己根本没手动选人，
+  // 只看到一个不明所以的"MANAGER_OUT_OF_SCOPE"报错。"仅自己"范围下直接不采信
+  // 解析出来的负责人，永远维持锁定成自己，跟下拉框显示的状态保持一致。
+  const user = window.__user;
+  const isPrivileged = user && (user.role === 'admin' || (user.perms || []).includes('*'));
+  const isSelfScoped = user && !isPrivileged && (user.data_scopes?.inbound || 'global') === 'self';
+  if (!isSelfScoped) {
+    if (serverResult.manager_id) {
+      document.getElementById('ib-manager').value = serverResult.manager_id;
+    } else if (serverResult.manager_name) {
+      const m = IB.managers.find((mm) => mm.username === serverResult.manager_name);
+      if (m) document.getElementById('ib-manager').value = m.id;
+    }
   }
   // 分类必须先按识别出的快递商来定，否则快递商下拉会按旧分类重建，
   // 识别到的 courier_id 在列表里找不到，赋值静默失效（例如识别出韩国快递商但分类还停在"国内"）。

@@ -53,8 +53,22 @@ function fillServiceTypeSelect(courierId, serviceSel) {
     serviceSel.appendChild(opt);
   });
 }
+// managers.php?action=dropdown 返回的是全员列表，不按数据范围过滤——数据范围是
+// "仅自己"的账号，负责人下拉必须锁死成自己，否则选了别人提交时会被后端
+// manager_allowed_in_outbound_scope 拒绝，报一个前端完全没提示过的 MANAGER_OUT_OF_SCOPE。
+// （inbound.js 的新增表单已经有这个锁，这里是快递管理的填单号/编辑弹窗，之前漏掉了。）
 function fillManagerSelect(selectEl, selectedId) {
   if (!selectEl) return;
+  const user = window.__user;
+  const isPrivileged = user && (user.role === 'admin' || (user.perms || []).includes('*'));
+  const scope = user?.data_scopes?.outbound || 'global';
+  if (user && !isPrivileged && scope === 'self') {
+    const me = OB.managers.find((m) => String(m.id) === String(user.uid));
+    selectEl.innerHTML = `<option value="${user.uid}" selected>${esc(me?.username || user.username)}</option>`;
+    selectEl.disabled = true;
+    return;
+  }
+  selectEl.disabled = false;
   selectEl.innerHTML = '<option value="">未指定</option>';
   OB.managers.forEach((m) => {
     const opt = document.createElement('option');
