@@ -102,10 +102,15 @@ function clearTrashSelection() {
   renderTrash();
 }
 
+// 同 outbound.js：防止手快连点导致同一批 id 被并发处理两遍。
+let trBatchInFlight = false;
+
 async function batchRestoreSelected() {
+  if (trBatchInFlight) return;
   const ids = Array.from(TR.selectedIds);
   if (!ids.length) return;
   if (!confirm(`确认恢复已勾选的 ${ids.length} 条记录？`)) return;
+  trBatchInFlight = true;
   let okCount = 0;
   const failed = [];
   for (const id of ids) {
@@ -117,15 +122,18 @@ async function batchRestoreSelected() {
       failed.push(r?.name || id);
     }
   }
+  trBatchInFlight = false;
   TR.selectedIds.clear();
   toast(failed.length ? `已恢复 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}` : `已恢复 ${okCount} 条`, failed.length ? 'err' : 'ok', 4500);
   loadTrash();
 }
 
 async function batchPurgeSelected() {
+  if (trBatchInFlight) return;
   const ids = Array.from(TR.selectedIds);
   if (!ids.length) return;
   if (!confirm(`确认永久删除已勾选的 ${ids.length} 条记录？此操作不可恢复，关联图片也会一并删除。`)) return;
+  trBatchInFlight = true;
   let okCount = 0;
   const failed = [];
   for (const id of ids) {
@@ -137,6 +145,7 @@ async function batchPurgeSelected() {
       failed.push(r?.name || id);
     }
   }
+  trBatchInFlight = false;
   TR.selectedIds.clear();
   toast(failed.length ? `已永久删除 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}` : `已永久删除 ${okCount} 条`, failed.length ? 'err' : 'ok', 4500);
   loadTrash();

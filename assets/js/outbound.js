@@ -399,13 +399,30 @@ function clearSelection() {
 // ── 批量操作（改状态 / 删除）：挑选出来的 id 逐条调用现成的单条接口，
 // 复用已经写好的权限校验/数据范围/业务规则（比如"已邮寄"要求先有单号），
 // 不重复实现一遍，失败的记下来最后一起提示，不中断后面的。────────────
+// 勾选是跨页/跨筛选持续保留的（导出功能需要这个特性：先勾几页再一起导出），
+// 但这意味着换了筛选条件之后，之前别的条件下勾的记录还留着、当下却看不见——
+// 这时候如果直接批量删除/改状态，会在用户毫无察觉的情况下动到不在眼前的记录。
+// 这里检测一下，有这种"看不见的勾选"就在确认框里明确提示出来。
+function warnIfSelectionHasHiddenRows(ids) {
+  const visibleIds = new Set(OB.rows.map((r) => String(r.id)));
+  const hiddenCount = ids.filter((id) => !visibleIds.has(String(id))).length;
+  return hiddenCount > 0 ? `\n\n注意：其中 ${hiddenCount} 条不在当前筛选结果里（可能是之前换筛选条件前勾选的），请确认这些也是你要操作的记录。` : '';
+}
+
+// 批量操作正在跑的时候按钮没禁用，手快连点两下会让同一批 id 被并发处理两遍——
+// 结果上不算错（第二遍大多数会因为"已经删过/已经是这个状态"而失败），但会打两遍
+// 请求、弹两次汇总提示，体验很糊。加个简单的进行中锁，跟系统更新按钮的禁用逻辑一致。
+let obBatchInFlight = false;
+
 async function batchUpdateStatus() {
+  if (obBatchInFlight) return;
   const ids = Array.from(OB.selectedIds);
   if (!ids.length) return;
   const status = document.getElementById('ob-batch-status').value;
   const label = OB_STATUS_LABEL[status] || status;
-  if (!confirm(`确认把已勾选的 ${ids.length} 条记录状态改为"${label}"？`)) return;
+  if (!confirm(`确认把已勾选的 ${ids.length} 条记录状态改为"${label}"？${warnIfSelectionHasHiddenRows(ids)}`)) return;
 
+  obBatchInFlight = true;
   let okCount = 0;
   const failed = [];
   for (const id of ids) {
@@ -417,6 +434,7 @@ async function batchUpdateStatus() {
       failed.push(row?.name || id);
     }
   }
+  obBatchInFlight = false;
   clearSelection();
   if (failed.length) {
     toast(`已更新 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}`, 'err', 4500);
@@ -427,10 +445,12 @@ async function batchUpdateStatus() {
 }
 
 async function batchDeleteSelected() {
+  if (obBatchInFlight) return;
   const ids = Array.from(OB.selectedIds);
   if (!ids.length) return;
-  if (!confirm(`确认删除已勾选的 ${ids.length} 条记录？删除后会进入回收站。`)) return;
+  if (!confirm(`确认删除已勾选的 ${ids.length} 条记录？删除后会进入回收站。${warnIfSelectionHasHiddenRows(ids)}`)) return;
 
+  obBatchInFlight = true;
   let okCount = 0;
   const failed = [];
   for (const id of ids) {
@@ -442,6 +462,7 @@ async function batchDeleteSelected() {
       failed.push(row?.name || id);
     }
   }
+  obBatchInFlight = false;
   clearSelection();
   if (failed.length) {
     toast(`已删除 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}`, 'err', 4500);
