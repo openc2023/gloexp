@@ -264,12 +264,12 @@ function renderOutboundTable() {
 function trackingCellHtml(r) {
   const display = r.tracking_number ? `<span class="font-mono">${esc(r.tracking_number)}</span>` : '<span class="text-gray-300">未填写</span>';
   const editBtn = hasPerm('parcels:edit') ? `
-    <button type="button" class="tracking-edit-btn text-gray-400 hover:text-purple-600 flex-shrink-0" data-edit-tracking="${r.id}" title="修改单号">
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    <button type="button" class="tracking-edit-btn text-gray-400 hover:text-purple-600 flex-shrink-0 -m-1 p-1" data-edit-tracking="${r.id}" title="修改单号">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>` : '';
   const scanBtn = hasPerm('parcels:edit') ? `
-    <button type="button" class="text-gray-400 hover:text-purple-600 flex-shrink-0" data-scan-tracking="${r.id}" title="拍照/选图扫码识别">
-      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2m8-16h2a2 2 0 012 2v2m-4 12h2a2 2 0 002-2v-2M7 8v8m3-8v8m4-8v8m3-8v8"/></svg>
+    <button type="button" class="text-gray-400 hover:text-purple-600 flex-shrink-0 -m-1 p-1" data-scan-tracking="${r.id}" title="拍照/选图扫码识别">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2m8-16h2a2 2 0 012 2v2m-4 12h2a2 2 0 002-2v-2M7 8v8m3-8v8m4-8v8m3-8v8"/></svg>
     </button>` : '';
   return `<div class="inline-flex items-center gap-1.5" data-tracking-cell="${r.id}">${display}${editBtn}${scanBtn}</div>`;
 }
