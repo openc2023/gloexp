@@ -3,17 +3,25 @@
    不再有独立的"扫码"弹窗入口——识别和图片上传是同一个动作，见 inbound.js / outbound.js
    里的 handleImageFiles()。
 
-   识别策略：
+   识别策略（从便宜到贵，逐级 fallback）：
    1. 先对整张图直接解码一次（大多数情况条码本来就不算小，直接就中，最快）。
-   2. 失败再试 90°/180°/270° 三个旋转方向——手持拍照很难保证条码完全水平，
-      有的干脆是横着或倒着拍的，这种情况整图直接解码大概率失败，转个方向往往
-      一下就中，代价很小（只有 3 次额外尝试）。
-   3. 还是不行，切成若干张有重叠的局部裁剪图，逐块在各自原始分辨率下解码——
-      这是专门应对"图片本身很大很清晰，但条码在画面里只占一小块"的情况：
-      整图一起丢给解码器时，条码所占的有效像素比例太低，容易识别不出来；
-      切块后条码在单张裁剪图里的占比被放大了，解码成功率明显更高。
-      对于清晰度不够、本来就很小、或者被反光/污渍挡住的条码，这些办法都无法
-      凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。 */
+   2. 失败再切成若干张有重叠的局部裁剪图，逐块在各自原始分辨率下解码——
+      专门应对"图片本身很大很清晰，但条码在画面里只占一小块"：整图一起丢给
+      解码器时条码占的有效像素比例太低，切块后占比被放大，成功率明显更高。
+      （小图切块没意义，跳过。）
+   3. 上面都不行，做一次中值滤波去噪再重新走一遍直接解码/切块——专门应对
+      摩尔纹（比如对着屏幕或反光面拍）和相机噪点这类"条码本身没问题、但画面
+      被高频干扰纹路弄花了"的情况。中值滤波对这种局部离群像素特别有效，
+      比 NLM 计算量小得多，纯 JS 在手机上跑单张图也就一两秒，作为最后一级
+      兜底可以接受。
+      对于清晰度不够、本来就很小、或者被大面积反光/污渍挡住的条码，以上手段
+      都无法凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。
+
+      （曾经在这里加过一级"整图转 90/180/270 度重试"，后来验证发现纯粹是
+      浪费时间就去掉了：180 度的情况其实第 1 步直接解码就已经能读出来
+      （ZXing 对一维码的首尾方向本来就不敏感），而 90/270 度真正"侧躺"的
+      条码，不管转不转、ZXing 这条浏览器解码路径都读不出来——是库本身在
+      这条 API 上的限制，转了也没用，白白多花好几秒。） */
 const BarcodeScan = (function () {
   let reader = null;
   function ensureReader() {
@@ -43,31 +51,10 @@ const BarcodeScan = (function () {
     });
   }
 
-  // 把图按 90/180/270 度转出一张新画布，用来试着从不同方向解码。
-  function rotateImage(img, degrees) {
-    const w = img.naturalWidth, h = img.naturalHeight;
-    const canvas = document.createElement('canvas');
-    const swapped = degrees === 90 || degrees === 270;
-    canvas.width = swapped ? h : w;
-    canvas.height = swapped ? w : h;
-    const ctx = canvas.getContext('2d');
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate((degrees * Math.PI) / 180);
-    ctx.drawImage(img, -w / 2, -h / 2);
-    return canvas.toDataURL('image/jpeg', 0.92);
-  }
-
-  async function decodeWithRotations(img) {
-    for (const degrees of [90, 180, 270]) {
-      const text = await decodeImageUrl(rotateImage(img, degrees));
-      if (text) return text;
-    }
-    return null;
-  }
-
   // 3x3 网格切块，格子间留 20% 重叠，避免条码正好卡在切割线上被拦腰切断。
+  // img 可以是 <img> 也可以是去噪产出的 <canvas>，两者取宽高的属性名不一样。
   async function decodeTiled(img) {
-    const w = img.naturalWidth, h = img.naturalHeight;
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
     if (!w || !h) return null;
 
     const cols = 3, rows = 3, overlap = 0.2;
@@ -88,10 +75,55 @@ const BarcodeScan = (function () {
       canvas.width = t.w;
       canvas.height = t.h;
       canvas.getContext('2d').drawImage(img, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
-      const text = await decodeImageUrl(canvas.toDataURL('image/jpeg', 0.92));
+      // 用无损 PNG，不要 JPEG——JPEG 的有损压缩会在条码黑白边缘introduce新的振铃
+      // 伪影，把切块/去噪好不容易换来的清晰边缘又弄花，实测验证过这个区别是真的：
+      // 同一张去噪后的图，PNG 能解出来，JPEG（92% 质量）解不出来。这些图片只是
+      // 临时拿去解码、不会上传/存储，用 PNG 也没有体积代价。
+      const text = await decodeImageUrl(canvas.toDataURL('image/png'));
       if (text) return text;
     }
     return null;
+  }
+
+  // 灰度化 + 中值滤波去噪：先转灰度（条码识别本来就是黑白模式，色彩通道没用，
+  // 顺带减少后续计算量），再用一个小窗口的中值滤波把摩尔纹/噪点这类局部离群
+  // 像素抹掉，同时尽量保留条码黑白边缘的清晰度（中值滤波对保边缘比均值模糊要好）。
+  function medianDenoise(img, radius = 1) {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { data, width, height } = imageData;
+
+    const gray = new Uint8ClampedArray(width * height);
+    for (let i = 0; i < width * height; i++) {
+      gray[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) | 0;
+    }
+
+    const out = new Uint8ClampedArray(width * height);
+    const win = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        win.length = 0;
+        for (let dy = -radius; dy <= radius; dy++) {
+          const yy = Math.min(height - 1, Math.max(0, y + dy));
+          for (let dx = -radius; dx <= radius; dx++) {
+            const xx = Math.min(width - 1, Math.max(0, x + dx));
+            win.push(gray[yy * width + xx]);
+          }
+        }
+        win.sort((a, b) => a - b);
+        out[y * width + x] = win[win.length >> 1];
+      }
+    }
+
+    for (let i = 0; i < width * height; i++) {
+      data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = out[i];
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
   }
 
   async function decodeFile(file) {
@@ -104,12 +136,18 @@ const BarcodeScan = (function () {
       const img = await loadImage(url).catch(() => null);
       if (!img || !img.naturalWidth) return null;
 
-      const rotated = await decodeWithRotations(img);
-      if (rotated) return rotated;
+      const big = img.naturalWidth * img.naturalHeight >= 1600 * 1600;
+      if (big) {
+        const tiled = await decodeTiled(img);
+        if (tiled) return tiled;
+      }
 
-      // 图不大的话切块也没意义（本来就没多少像素可分），跳过
-      if (img.naturalWidth * img.naturalHeight < 1600 * 1600) return null;
-      return await decodeTiled(img);
+      // 最后一级：去噪后再试一遍整图直接解码 + 切块（大图才切块，小图没意义）
+      const denoisedCanvas = medianDenoise(img);
+      const denoisedText = await decodeImageUrl(denoisedCanvas.toDataURL('image/png'));
+      if (denoisedText) return denoisedText;
+      if (big) return await decodeTiled(denoisedCanvas);
+      return null;
     } finally {
       URL.revokeObjectURL(url);
     }
