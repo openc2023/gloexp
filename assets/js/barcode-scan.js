@@ -136,7 +136,12 @@ const BarcodeScan = (function () {
       const img = await loadImage(url).catch(() => null);
       if (!img || !img.naturalWidth) return null;
 
-      const big = img.naturalWidth * img.naturalHeight >= 1600 * 1600;
+      // 之前拿 1600x1600（约 256 万像素）当"值不值得切块"的门槛，是照着一张刻意造的
+      // 3000x3000 测试图拍脑袋定的——真实测试发现一张很普通的 1080x1920（约 207 万
+      // 像素）手机截图/照片会被这个门槛卡在外面，切块压根没机会跑，明显定高了。
+      // 改成一个宽松很多的门槛：只要不是明显很小的缩略图（3x3 切完每块还有点分辨率
+      // 可用）就值得试一次，切块本身也不贵。
+      const big = img.naturalWidth * img.naturalHeight >= 700 * 700;
       if (big) {
         const tiled = await decodeTiled(img);
         if (tiled) return tiled;
