@@ -5,11 +5,15 @@
 
    识别策略：
    1. 先对整张图直接解码一次（大多数情况条码本来就不算小，直接就中，最快）。
-   2. 失败再切成若干张有重叠的局部裁剪图，逐块在各自原始分辨率下解码——
+   2. 失败再试 90°/180°/270° 三个旋转方向——手持拍照很难保证条码完全水平，
+      有的干脆是横着或倒着拍的，这种情况整图直接解码大概率失败，转个方向往往
+      一下就中，代价很小（只有 3 次额外尝试）。
+   3. 还是不行，切成若干张有重叠的局部裁剪图，逐块在各自原始分辨率下解码——
       这是专门应对"图片本身很大很清晰，但条码在画面里只占一小块"的情况：
       整图一起丢给解码器时，条码所占的有效像素比例太低，容易识别不出来；
       切块后条码在单张裁剪图里的占比被放大了，解码成功率明显更高。
-      对于清晰度不够、本来就很小的条码，切块无法凭空造出细节，帮不上忙。 */
+      对于清晰度不够、本来就很小、或者被反光/污渍挡住的条码，这些办法都无法
+      凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。 */
 const BarcodeScan = (function () {
   let reader = null;
   function ensureReader() {
@@ -37,6 +41,28 @@ const BarcodeScan = (function () {
       img.onerror = reject;
       img.src = url;
     });
+  }
+
+  // 把图按 90/180/270 度转出一张新画布，用来试着从不同方向解码。
+  function rotateImage(img, degrees) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const canvas = document.createElement('canvas');
+    const swapped = degrees === 90 || degrees === 270;
+    canvas.width = swapped ? h : w;
+    canvas.height = swapped ? w : h;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((degrees * Math.PI) / 180);
+    ctx.drawImage(img, -w / 2, -h / 2);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  }
+
+  async function decodeWithRotations(img) {
+    for (const degrees of [90, 180, 270]) {
+      const text = await decodeImageUrl(rotateImage(img, degrees));
+      if (text) return text;
+    }
+    return null;
   }
 
   // 3x3 网格切块，格子间留 20% 重叠，避免条码正好卡在切割线上被拦腰切断。
@@ -75,9 +101,14 @@ const BarcodeScan = (function () {
       const direct = await decodeImageUrl(url);
       if (direct) return direct;
 
-      // 图不大的话切块也没意义（本来就没多少像素可分），跳过
       const img = await loadImage(url).catch(() => null);
-      if (!img || img.naturalWidth * img.naturalHeight < 1600 * 1600) return null;
+      if (!img || !img.naturalWidth) return null;
+
+      const rotated = await decodeWithRotations(img);
+      if (rotated) return rotated;
+
+      // 图不大的话切块也没意义（本来就没多少像素可分），跳过
+      if (img.naturalWidth * img.naturalHeight < 1600 * 1600) return null;
       return await decodeTiled(img);
     } finally {
       URL.revokeObjectURL(url);

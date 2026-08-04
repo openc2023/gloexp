@@ -42,8 +42,11 @@ const CameraCapture = (function () {
     try {
       // 主动要一个较高分辨率的画面（很多手机浏览器默认给的分辨率偏低，条码本来就小的话
       // 更难识别）；ideal 只是期望值，设备给不了会自动降级，不会导致打不开摄像头。
+      // 注意：只给 width 一个期望值，不强行指定 height——手机摄像头天生是长方形
+      // （常见 3:4 / 9:16），width/height 都指定成一样的数等于要求一个正方形画面，
+      // 会跟设备实际拍出来的画幅对不上，看起来就是"跟手机摄像头本身不一样"。
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1920 } },
+        video: { facingMode: 'environment', width: { ideal: 1920 } },
       });
       video.srcObject = stream;
       await video.play();
