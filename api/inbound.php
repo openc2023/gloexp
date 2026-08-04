@@ -140,7 +140,7 @@ if ($action === 'create') {
         trim($body['phone']        ?? ''),
         $managerId,
         trim($body['category']     ?? 'cn'),
-        $body['courier_id']        ?: null,
+        ($body['courier_id'] ?? '') ?: null,
         trim($body['service_type'] ?? '普通'),
         trim($body['tracking_number'] ?? ''),
         trim($body['address']      ?? ''),

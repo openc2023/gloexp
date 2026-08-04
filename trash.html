@@ -26,10 +26,24 @@
           </div>
 
           <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="flex items-center gap-3 px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-700/20 text-xs">
+              <label class="inline-flex items-center gap-2 text-gray-500 dark:text-gray-400 cursor-pointer">
+                <input type="checkbox" id="tr-select-all" class="rounded border-gray-300" />
+                全选
+              </label>
+              <span id="tr-selection-info" class="hidden flex flex-wrap items-center gap-2 text-purple-600 dark:text-purple-300">
+                <span>已勾选 <span id="tr-selection-count">0</span> 条
+                  <button type="button" id="tr-clear-selection" class="ml-1 underline text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">清除</button>
+                </span>
+                <button type="button" id="tr-batch-restore-btn" class="hidden px-2.5 py-1 rounded-md border border-emerald-300 dark:border-emerald-500/40 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10">批量恢复</button>
+                <button type="button" id="tr-batch-purge-btn" class="hidden px-2.5 py-1 rounded-md border border-red-300 dark:border-red-500/40 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">批量永久删除</button>
+              </span>
+            </div>
             <div class="overflow-x-auto">
               <table class="w-full text-sm text-left">
                 <thead class="bg-gray-50 dark:bg-gray-700/40 text-xs text-gray-500 dark:text-gray-400 uppercase">
                   <tr>
+                    <th class="px-4 py-3 w-8"></th>
                     <th class="px-4 py-3">类型</th>
                     <th class="px-4 py-3">姓名</th>
                     <th class="px-4 py-3">手机</th>
@@ -54,7 +68,7 @@
   <script src="assets/js/perm.js?v=20260804a"></script>
   <script src="assets/js/auth.js?v=20260804a"></script>
   <script src="assets/js/nav.js?v=20260804d"></script>
-  <script src="assets/js/trash.js?v=20260804a"></script>
+  <script src="assets/js/trash.js?v=20260804g"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('trash.html'); initTrash(); });
     Auth.protectPage();
