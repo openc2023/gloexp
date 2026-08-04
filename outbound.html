@@ -82,9 +82,19 @@
                 <input type="checkbox" id="ob-select-all-page" class="rounded border-gray-300" />
                 全选本页
               </label>
-              <span id="ob-selection-info" class="hidden text-purple-600 dark:text-purple-300">
-                已勾选 <span id="ob-selection-count">0</span> 条
-                <button type="button" id="ob-clear-selection" class="ml-1 underline text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">清除</button>
+              <span id="ob-selection-info" class="hidden flex flex-wrap items-center gap-2 text-purple-600 dark:text-purple-300">
+                <span>已勾选 <span id="ob-selection-count">0</span> 条
+                  <button type="button" id="ob-clear-selection" class="ml-1 underline text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">清除</button>
+                </span>
+                <span id="ob-batch-status-wrap" class="hidden inline-flex items-center gap-1.5">
+                  <select id="ob-batch-status" class="field !w-auto !py-1 !text-xs">
+                    <option value="pending-ship">改为待邮寄</option>
+                    <option value="shipped">改为已邮寄</option>
+                    <option value="exception">改为异常件</option>
+                  </select>
+                  <button type="button" id="ob-batch-status-btn" class="px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">应用</button>
+                </span>
+                <button type="button" id="ob-batch-delete-btn" class="hidden px-2.5 py-1 rounded-md border border-red-300 dark:border-red-500/40 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">批量删除</button>
               </span>
             </div>
             <div id="ob-table-wrap" class="overflow-x-auto">
@@ -369,7 +379,7 @@
   <script src="assets/js/barcode-scan.js?v=20260804e"></script>
   <script src="assets/js/camera-capture.js?v=20260804e"></script>
   <script src="assets/js/lightbox.js?v=20260804a"></script>
-  <script src="assets/js/outbound.js?v=20260804a"></script>
+  <script src="assets/js/outbound.js?v=20260804f"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('outbound.html'); initOutbound(); });
     Auth.protectPage();

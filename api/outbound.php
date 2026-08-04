@@ -27,7 +27,7 @@ function outbound_record_for_user(array $user, int $id): array {
         $params = array_merge($params, $scopeParams);
     }
 
-    $stmt = db()->prepare("SELECT p.id, p.name, p.manager_id FROM parcels p WHERE " . implode(' AND ', $where) . " LIMIT 1");
+    $stmt = db()->prepare("SELECT p.id, p.name, p.manager_id, p.tracking_number FROM parcels p WHERE " . implode(' AND ', $where) . " LIMIT 1");
     $stmt->execute($params);
     $row = $stmt->fetch();
     if (!$row) {
@@ -200,8 +200,16 @@ if ($action === 'update') {
     $record = outbound_record_for_user($user, $id);
     require_outbound_manager_assignment($user, $body);
 
-    if (array_key_exists('status', $body) && $body['status'] === 'shipped' && trim((string)($body['tracking_number'] ?? '')) === '') {
-        json_out(['ok' => false, 'msg' => '已邮寄状态需要填写快递单号']);
+    // 单号可能不在这次请求体里（比如批量改状态只传 status），这种情况要看记录当前
+    // 已经存的单号，不能一概而论地当成"没填"——不然像批量改状态这类只改单个字段的
+    // 调用，会被这条校验误伤（明明数据库里已经有单号了）。
+    if (array_key_exists('status', $body) && $body['status'] === 'shipped') {
+        $effectiveTracking = array_key_exists('tracking_number', $body)
+            ? trim((string)$body['tracking_number'])
+            : trim((string)($record['tracking_number'] ?? ''));
+        if ($effectiveTracking === '') {
+            json_out(['ok' => false, 'msg' => '已邮寄状态需要填写快递单号']);
+        }
     }
     if (array_key_exists('name', $body) && trim((string)$body['name']) === '') {
         json_out(['ok' => false, 'msg' => '客户姓名不能为空']);

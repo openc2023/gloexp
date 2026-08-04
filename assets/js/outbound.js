@@ -396,6 +396,61 @@ function clearSelection() {
   renderOutboundTable();
 }
 
+// ── 批量操作（改状态 / 删除）：挑选出来的 id 逐条调用现成的单条接口，
+// 复用已经写好的权限校验/数据范围/业务规则（比如"已邮寄"要求先有单号），
+// 不重复实现一遍，失败的记下来最后一起提示，不中断后面的。────────────
+async function batchUpdateStatus() {
+  const ids = Array.from(OB.selectedIds);
+  if (!ids.length) return;
+  const status = document.getElementById('ob-batch-status').value;
+  const label = OB_STATUS_LABEL[status] || status;
+  if (!confirm(`确认把已勾选的 ${ids.length} 条记录状态改为"${label}"？`)) return;
+
+  let okCount = 0;
+  const failed = [];
+  for (const id of ids) {
+    try {
+      await Api.api('outbound', 'update', { method: 'POST', params: { id }, body: { status } });
+      okCount++;
+    } catch (e) {
+      const row = getRow(id);
+      failed.push(row?.name || id);
+    }
+  }
+  clearSelection();
+  if (failed.length) {
+    toast(`已更新 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}`, 'err', 4500);
+  } else {
+    toast(`已更新 ${okCount} 条`, 'ok');
+  }
+  loadOutboundList();
+}
+
+async function batchDeleteSelected() {
+  const ids = Array.from(OB.selectedIds);
+  if (!ids.length) return;
+  if (!confirm(`确认删除已勾选的 ${ids.length} 条记录？删除后会进入回收站。`)) return;
+
+  let okCount = 0;
+  const failed = [];
+  for (const id of ids) {
+    try {
+      await Api.api('outbound', 'delete', { method: 'POST', params: { id } });
+      okCount++;
+    } catch (e) {
+      const row = getRow(id);
+      failed.push(row?.name || id);
+    }
+  }
+  clearSelection();
+  if (failed.length) {
+    toast(`已删除 ${okCount} 条，${failed.length} 条失败：${failed.slice(0, 5).join('、')}${failed.length > 5 ? ' 等' : ''}`, 'err', 4500);
+  } else {
+    toast(`已删除 ${okCount} 条`, 'ok');
+  }
+  loadOutboundList();
+}
+
 function renderPagination() {
   const box = document.getElementById('ob-pagination');
   const pages = Math.max(1, Math.ceil(OB.total / OB.limit));
@@ -785,6 +840,15 @@ async function initOutbound() {
 
   document.getElementById('ob-select-all-page').addEventListener('change', (e) => toggleSelectAllPage(e.target.checked));
   document.getElementById('ob-clear-selection').addEventListener('click', clearSelection);
+
+  if (hasPerm('parcels:edit')) {
+    document.getElementById('ob-batch-status-wrap').classList.remove('hidden');
+    document.getElementById('ob-batch-status-btn').addEventListener('click', batchUpdateStatus);
+  }
+  if (hasPerm('parcels:delete')) {
+    document.getElementById('ob-batch-delete-btn').classList.remove('hidden');
+    document.getElementById('ob-batch-delete-btn').addEventListener('click', batchDeleteSelected);
+  }
 
   loadOutboundList();
 }
