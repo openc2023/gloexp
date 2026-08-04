@@ -65,12 +65,12 @@ function github_api_get(string $url): array {
 function download_to_file(string $url, string $dest): void {
     $ctx = stream_context_create(['http' => [
         'header' => "User-Agent: gloexp-update-checker\r\n",
-        'timeout' => 60,
+        'timeout' => 120,
         'follow_location' => 1,
     ]]);
     $data = @file_get_contents($url, false, $ctx);
     if ($data === false) {
-        throw new Exception('下载更新包失败');
+        throw new Exception('下载更新包失败，请检查服务器网络后重试');
     }
     file_put_contents($dest, $data);
 }
@@ -167,6 +167,40 @@ if ($action === 'backups') {
 
 if ($action === 'update') {
     method_must('POST');
+    // 下载+解压+覆盖对共享主机常见的默认执行时间（比如 30 秒）来说太紧，容易被引擎强制
+    // 杀掉——杀掉的时机如果正好在"覆盖到一半"，就会出现有的目录更新了、有的没更新的
+    // 半吊子状态。这里放宽执行时间，并且用 register_shutdown_function 兜底：
+    // 不管是被强制杀掉还是中途抛异常，只要"已经开始覆盖但还没跑完"，就自动把刚才的
+    // 备份恢复回去，保证结果只有两种：完全更新成功，或者完全恢复原状，不会是中间态。
+    set_time_limit(300);
+    // 执行超时是 PHP Fatal error，默认会把错误文本直接输出到响应里，混在下面
+    // shutdown 函数吐出的 JSON 前面，导致前端 res.json() 解析失败——关掉直接输出，
+    // 改记到服务器错误日志，保证这个接口任何时候返回的都是干净的 JSON。
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+
+    $backupName = null;
+    $deployStarted = false;
+    $handled = false;
+
+    register_shutdown_function(function () use (&$backupName, &$deployStarted, &$handled) {
+        if ($handled) return;
+        if ($deployStarted && $backupName) {
+            $backupPath = BACKUP_DIR . '/' . $backupName;
+            if (is_dir($backupPath)) deploy_from($backupPath);
+        }
+        if (!headers_sent()) {
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'ok' => false,
+            'msg' => $deployStarted
+                ? '更新过程被中断（可能是服务器执行超时或网络问题），已自动回滚到更新前的版本，不会是部分更新的状态'
+                : '更新过程被中断（可能是网络问题），还没有开始覆盖任何文件，可以重试',
+        ], JSON_UNESCAPED_UNICODE);
+    });
+
     try {
         $commit = github_api_get('https://api.github.com/repos/' . UPDATE_REPO_OWNER . '/' . UPDATE_REPO_NAME . '/commits/' . UPDATE_REPO_BRANCH);
         $latestSha = (string)($commit['sha'] ?? '');
@@ -177,6 +211,13 @@ if ($action === 'update') {
         $zipUrl = 'https://codeload.github.com/' . UPDATE_REPO_OWNER . '/' . UPDATE_REPO_NAME . '/zip/refs/heads/' . UPDATE_REPO_BRANCH;
         $tmpZip = sys_get_temp_dir() . '/gloexp_update_' . uniqid() . '.zip';
         download_to_file($zipUrl, $tmpZip);
+
+        // 下载下来的包太小/不存在，说明网络中途断了，包是残缺的——这时候还没碰过
+        // 线上任何文件，直接报错让用户重试就行，不用回滚。
+        if (!file_exists($tmpZip) || filesize($tmpZip) < 1024) {
+            @unlink($tmpZip);
+            throw new Exception('更新包下载不完整，请检查服务器网络后重试');
+        }
 
         if (!class_exists('ZipArchive')) {
             @unlink($tmpZip);
@@ -198,13 +239,34 @@ if ($action === 'update') {
             rrmdir($extractDir);
             throw new Exception('更新包结构异常');
         }
-        deploy_from($extractDir . '/' . $topDirs[0]);
+        $sourceRoot = $extractDir . '/' . $topDirs[0];
+
+        // 开始真正覆盖线上文件之前，先确认新代码包里白名单目录都齐全——
+        // 避免"包本身就下载不全"这种情况下覆盖到一半才发现缺文件。
+        foreach (DEPLOY_PATHS as $p) {
+            if (!file_exists($sourceRoot . '/' . $p)) {
+                rrmdir($extractDir);
+                throw new Exception("更新包缺少 {$p}，可能下载不完整，请重试");
+            }
+        }
+
+        $deployStarted = true;
+        deploy_from($sourceRoot);
         rrmdir($extractDir);
 
         set_local_version($latestSha);
         write_log($user, '更新', '系统更新', 0, '', "更新到版本 {$latestSha}，备份：{$backupName}");
+
+        $handled = true;
         json_out(['ok' => true, 'version' => $latestSha, 'backup' => $backupName]);
     } catch (Exception $e) {
+        if ($deployStarted && $backupName) {
+            $backupPath = BACKUP_DIR . '/' . $backupName;
+            if (is_dir($backupPath)) deploy_from($backupPath);
+            $handled = true;
+            json_out(['ok' => false, 'msg' => $e->getMessage() . '（已自动回滚到更新前版本，不会是部分更新状态）']);
+        }
+        $handled = true;
         json_out(['ok' => false, 'msg' => $e->getMessage()]);
     }
 }
