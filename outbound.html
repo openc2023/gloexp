@@ -87,7 +87,7 @@
                   <button type="button" id="ob-clear-selection" class="ml-1 underline text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">清除</button>
                 </span>
                 <span id="ob-batch-status-wrap" class="hidden inline-flex items-center gap-1.5">
-                  <select id="ob-batch-status" class="field !w-auto !py-1 !text-xs">
+                  <select id="ob-batch-status" class="field !w-auto !py-1">
                     <option value="pending-ship">改为待邮寄</option>
                     <option value="shipped">改为已邮寄</option>
                     <option value="exception">改为异常件</option>
@@ -286,7 +286,7 @@
     <img id="lightbox-img" class="max-w-full max-h-full object-contain rounded-md" />
   </div>
 
-  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.5rem .75rem;font-size:.875rem;background:transparent}
+  <style>.field{width:100%;border-radius:.375rem;border:1px solid rgb(209 213 219);padding:.5rem .75rem;font-size:1rem;background:transparent}
   html.dark .field{border-color:rgb(75 85 99);color:rgb(243 244 246);background:rgb(55 65 81)}
   .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}
   .ob-status-btn.active{background:rgb(147 51 234);color:#fff}
@@ -373,13 +373,13 @@
 
   <script src="assets/js/api-client.js?v=20260804a"></script>
   <script src="assets/js/perm.js?v=20260804a"></script>
-  <script src="assets/js/auth.js?v=20260804a"></script>
+  <script src="assets/js/auth.js?v=20260804n"></script>
   <script src="assets/js/nav.js?v=20260804d"></script>
   <script src="assets/vendor/zxing/zxing.min.js?v=20260804a"></script>
   <script src="assets/js/barcode-scan.js?v=20260804l"></script>
   <script src="assets/js/camera-capture.js?v=20260804j"></script>
   <script src="assets/js/lightbox.js?v=20260804a"></script>
-  <script src="assets/js/outbound.js?v=20260804m"></script>
+  <script src="assets/js/outbound.js?v=20260804n"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('outbound.html'); initOutbound(); });
     Auth.protectPage();

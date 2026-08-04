@@ -493,7 +493,7 @@ function renderMembers() {
       <td class="px-4 py-3 font-medium text-gray-800 dark:text-gray-100">${esc(m.username)}</td>
       <td class="px-4 py-3">
         ${hasPerm('team:member_edit') ? `
-          <select data-role-for="${m.user_id}" class="field !py-1 !text-xs w-28">
+          <select data-role-for="${m.user_id}" class="field !py-1 w-28">
             <option value="member" ${m.role_in_group === 'member' ? 'selected' : ''}>成员</option>
             <option value="senior" ${m.role_in_group === 'senior' ? 'selected' : ''}>资深成员</option>
             <option value="leader" ${m.role_in_group === 'leader' ? 'selected' : ''}>组长</option>

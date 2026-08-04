@@ -279,7 +279,7 @@ function openTrackingInlineEdit(id) {
   const cell = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`);
   if (!row || !cell) return;
   cell.innerHTML = `
-    <input type="text" class="field !w-28 !py-1 !text-xs font-mono" id="tracking-inline-input-${id}" value="${esc(row.tracking_number || '')}" placeholder="填写单号" />
+    <input type="text" class="field !w-36 !py-1 font-mono" id="tracking-inline-input-${id}" value="${esc(row.tracking_number || '')}" placeholder="填写单号" />
     <button type="button" class="text-emerald-600 hover:text-emerald-800 flex-shrink-0" data-confirm-tracking="${id}" title="保存">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
     </button>

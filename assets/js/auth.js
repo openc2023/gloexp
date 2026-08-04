@@ -72,15 +72,15 @@
         <form id="pwd-form" class="space-y-3">
           <div>
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">原密码</label>
-            <input type="password" id="pwd-old" required class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            <input type="password" id="pwd-old" required class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-base px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">新密码（至少 6 位）</label>
-            <input type="password" id="pwd-new" required minlength="6" class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            <input type="password" id="pwd-new" required minlength="6" class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-base px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">确认新密码</label>
-            <input type="password" id="pwd-new2" required minlength="6" class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            <input type="password" id="pwd-new2" required minlength="6" class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-base px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500" />
           </div>
           <div class="flex justify-end gap-2 pt-2">
             <button type="button" id="pwd-cancel" class="px-3 py-1.5 text-sm rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">取消</button>
