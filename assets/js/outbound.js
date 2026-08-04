@@ -291,10 +291,19 @@ function openTrackingInlineEdit(id) {
   input.select();
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); saveTrackingInline(id); }
-    if (e.key === 'Escape') { e.preventDefault(); renderOutboundTable(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelTrackingInlineEdit(input); }
   });
   cell.querySelector(`[data-confirm-tracking="${id}"]`).addEventListener('click', () => saveTrackingInline(id));
-  cell.querySelector(`[data-cancel-tracking="${id}"]`).addEventListener('click', () => renderOutboundTable());
+  cell.querySelector(`[data-cancel-tracking="${id}"]`).addEventListener('click', () => cancelTrackingInlineEdit(input));
+}
+
+// 保存/取消的时候都要先让输入框失焦，再去整段替换 tbody.innerHTML——手机上如果
+// 直接把还聚焦着的输入框从 DOM 里连根拔掉，Safari 会把页面滚动位置弹回顶部，
+// 表现出来就是"点了对勾/取消，页面莫名跳到最上面"。先手动 blur() 让浏览器有机会
+// 正常收起输入法/缩放状态，再动 DOM，就不会有这个跳动了。
+function cancelTrackingInlineEdit(input) {
+  input?.blur();
+  renderOutboundTable();
 }
 
 // 展示态点相机图标：弹出小面板，可拖拽/选图，也可以拍照（三种方式最终都走
@@ -365,6 +374,7 @@ async function saveTrackingInline(id) {
   try {
     await Api.api('outbound', 'update', { method: 'POST', params: { id }, body });
     toast(autoShip ? '已保存，并自动切换为已邮寄' : '单号已更新', 'ok');
+    input.blur(); // 见 cancelTrackingInlineEdit 里的说明：先失焦再刷新列表，避免手机上跳动
     loadOutboundList();
   } catch (e) { /* toast shown */ }
 }
