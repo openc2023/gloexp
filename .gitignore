@@ -3,6 +3,10 @@
 /data/*.db-journal
 /uploads/
 
+# 一键更新的运行时状态（当前版本号标记 + 更新前自动备份），每台服务器各自维护，不进仓库
+/data/VERSION
+/data/backups/
+
 # 常见系统/编辑器垃圾文件
 .DS_Store
 Thumbs.db

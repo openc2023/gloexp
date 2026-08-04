@@ -19,6 +19,8 @@ function switchTab(tab) {
   document.querySelectorAll('.team-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('panel-accounts').classList.toggle('hidden', tab !== 'accounts');
   document.getElementById('panel-groups').classList.toggle('hidden', tab !== 'groups');
+  document.getElementById('panel-update').classList.toggle('hidden', tab !== 'update');
+  if (tab === 'update') loadUpdateStatus();
 }
 
 // ══════════════════════ 账号 ══════════════════════
@@ -540,12 +542,95 @@ async function removeMember(userId) {
   } catch (e) { /* toast shown */ }
 }
 
+// ══════════════════════ 系统更新 ══════════════════════
+async function loadUpdateStatus() {
+  const statusBox = document.getElementById('update-status');
+  const baselineBox = document.getElementById('update-baseline-box');
+  const availBox = document.getElementById('update-available-box');
+  statusBox.textContent = '检查中...';
+  baselineBox.classList.add('hidden');
+  availBox.classList.add('hidden');
+  try {
+    const data = await Api.api('system_update', 'status');
+    if (data.baseline_missing) {
+      statusBox.textContent = '当前版本：未知（还没有设置基线）';
+      baselineBox.classList.remove('hidden');
+      TEAM.latestSha = data.latest;
+    } else if (data.has_update) {
+      statusBox.textContent = `当前版本：${data.current.slice(0, 8)}`;
+      document.getElementById('update-latest-msg').textContent =
+        `最新提交：${data.latest.slice(0, 8)} · ${data.latest_message || ''} · ${fmtDate(data.latest_date)}`;
+      availBox.classList.remove('hidden');
+    } else {
+      statusBox.textContent = `当前已是最新版本（${(data.current || '').slice(0, 8)}）`;
+    }
+  } catch (e) {
+    statusBox.textContent = '检查失败，请稍后再试';
+  }
+  loadUpdateBackups();
+}
+
+async function setUpdateBaseline() {
+  if (!TEAM.latestSha) return;
+  try {
+    await Api.api('system_update', 'set_baseline', { method: 'POST', body: { sha: TEAM.latestSha } });
+    toast('已设置基线版本', 'ok');
+    loadUpdateStatus();
+  } catch (e) { /* toast shown */ }
+}
+
+async function doSystemUpdate() {
+  if (!confirm('确认立即更新？会自动备份当前代码，更新过程中请勿关闭页面。')) return;
+  const btn = document.getElementById('btn-do-update');
+  btn.disabled = true;
+  btn.textContent = '更新中...';
+  try {
+    const data = await Api.api('system_update', 'update', { method: 'POST', body: {} });
+    toast('更新成功，版本 ' + (data.version || '').slice(0, 8), 'ok');
+    loadUpdateStatus();
+  } catch (e) {
+    /* toast shown */
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '立即更新';
+  }
+}
+
+async function loadUpdateBackups() {
+  const box = document.getElementById('update-backups-list');
+  try {
+    const data = await Api.api('system_update', 'backups');
+    const list = data.data || [];
+    if (!list.length) { box.textContent = '暂无备份'; return; }
+    box.innerHTML = list.map((b) => `
+      <div class="flex items-center justify-between border border-gray-100 dark:border-gray-700 rounded-md px-3 py-2">
+        <span class="text-gray-600 dark:text-gray-300">${esc(b.name)}</span>
+        <span class="text-gray-400">${esc(fmtDate(new Date(b.time * 1000).toISOString()))}</span>
+        <button type="button" data-rollback="${esc(b.name)}" class="text-purple-600 hover:text-purple-800">回滚</button>
+      </div>`).join('');
+    box.querySelectorAll('[data-rollback]').forEach((btn) =>
+      btn.addEventListener('click', () => rollbackUpdate(btn.dataset.rollback)));
+  } catch (e) { box.textContent = '加载失败'; }
+}
+
+async function rollbackUpdate(name) {
+  if (!confirm(`确认回滚到备份"${name}"？当前代码会被这份备份覆盖。`)) return;
+  try {
+    await Api.api('system_update', 'rollback', { method: 'POST', body: { name } });
+    toast('已回滚', 'ok');
+    loadUpdateStatus();
+  } catch (e) { /* toast shown */ }
+}
+
 // ══════════════════════ 初始化 ══════════════════════
 // 团队架构暂缓：org-form / btn-add-member 等监听器不再注册，loadOrgGroups 不再调用。
 async function initTeam() {
   document.querySelectorAll('.team-tab').forEach((btn) => {
     if (btn.dataset.tab === 'accounts' && !hasPerm('team:accounts_view')) btn.classList.add('hidden');
     if (btn.dataset.tab === 'groups' && !hasPerm('team:groups_view')) btn.classList.add('hidden');
+    // 系统更新只给真正的超级管理员看——服务端 system_update.php 也强制校验 role=admin，
+    // 这里只是不给用不了的人看见入口，不是唯一的权限防线。
+    if (btn.dataset.tab === 'update' && !(window.__user && window.__user.role === 'admin')) btn.classList.add('hidden');
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
   const firstVisible = document.querySelector('.team-tab:not(.hidden)');
@@ -564,6 +649,10 @@ async function initTeam() {
   document.getElementById('grp-form-cancel').addEventListener('click', () => { resetGrpForm(); hideGrpFormCard(); });
   document.getElementById('grp-template').addEventListener('change', (e) => { if (e.target.value) applyTemplate(e.target.value); });
   document.getElementById('btn-lookup').addEventListener('click', runPermissionLookup);
+
+  document.getElementById('btn-check-update')?.addEventListener('click', loadUpdateStatus);
+  document.getElementById('btn-set-baseline')?.addEventListener('click', setUpdateBaseline);
+  document.getElementById('btn-do-update')?.addEventListener('click', doSystemUpdate);
 
   if (hasPerm('team:accounts_view')) await Promise.all([loadAccounts(), loadGroups()]);
   if (hasPerm('team:groups_view')) { await loadPermsMeta(); await loadTemplates(); if (!TEAM.groups.length) await loadGroups(); }

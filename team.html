@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>团队管理 · 快递管理系统</title>
-<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
-<link rel="stylesheet" href="assets/css/app.css?v=20260804a">
+<link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804b">
+<link rel="stylesheet" href="assets/css/app.css?v=20260804b">
 </head>
 <body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
   <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -24,6 +24,7 @@
           <div class="flex gap-1 mb-5 border-b border-gray-200 dark:border-gray-700" id="team-tabs">
             <button data-tab="accounts" class="team-tab px-4 py-2.5 text-sm font-medium border-b-2 border-purple-600 text-purple-600">账号</button>
             <button data-tab="groups" class="team-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400">权限组</button>
+            <button data-tab="update" class="team-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400">系统更新</button>
           </div>
           <!-- 团队架构：暂缓，待定。相关代码保留在 team.js（loadOrgGroups 等），未接入 UI。 -->
 
@@ -133,6 +134,34 @@
             </div>
           </div>
 
+          <!-- ══ 系统更新（仅超级管理员可见，服务端也强制校验 role=admin）══ -->
+          <div id="panel-update" class="team-panel hidden max-w-2xl space-y-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
+              <div class="flex items-center justify-between mb-1">
+                <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">系统更新</h3>
+                <button id="btn-check-update" class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">检查更新</button>
+              </div>
+              <div id="update-status" class="text-xs text-gray-400 mt-2">点击"检查更新"查看当前版本状态</div>
+
+              <div id="update-baseline-box" class="hidden mt-3 text-xs bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded-md px-3 py-2">
+                本机还没有记录当前版本号。如果当前代码就是仓库里的最新代码（比如刚部署/刚建好仓库），点这里把它标记为基线，之后才能正确判断"有没有新版本"。
+                <button id="btn-set-baseline" class="mt-2 block underline font-medium">标记当前代码为最新版本</button>
+              </div>
+
+              <div id="update-available-box" class="hidden mt-3 bg-purple-50 dark:bg-purple-500/10 rounded-md px-3 py-3">
+                <div class="text-sm text-purple-700 dark:text-purple-300 font-medium">发现新版本</div>
+                <div id="update-latest-msg" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></div>
+                <button id="btn-do-update" class="mt-3 px-4 py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">立即更新</button>
+                <p class="text-[11px] text-gray-400 mt-2">更新前会自动备份当前代码，可在下方"更新历史"里回滚。不会影响数据库和已上传的图片。</p>
+              </div>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
+              <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">更新历史（可回滚）</h3>
+              <div id="update-backups-list" class="space-y-2 text-xs text-gray-400">暂无备份</div>
+            </div>
+          </div>
+
           <!-- ══ 团队架构 ══ -->
           <div id="panel-org" class="team-panel hidden grid grid-cols-1 lg:grid-cols-5 gap-6">
             <div class="lg:col-span-2 space-y-4">
@@ -206,11 +235,11 @@
   .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}
   .team-tab.active{border-color:rgb(147 51 234);color:rgb(147 51 234)}</style>
 
-  <script src="assets/js/api-client.js?v=20260804a"></script>
-  <script src="assets/js/perm.js?v=20260804a"></script>
-  <script src="assets/js/auth.js?v=20260804a"></script>
-  <script src="assets/js/nav.js?v=20260804a"></script>
-  <script src="assets/js/team.js?v=20260804a"></script>
+  <script src="assets/js/api-client.js?v=20260804b"></script>
+  <script src="assets/js/perm.js?v=20260804b"></script>
+  <script src="assets/js/auth.js?v=20260804b"></script>
+  <script src="assets/js/nav.js?v=20260804b"></script>
+  <script src="assets/js/team.js?v=20260804b"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('team.html'); initTeam(); });
     Auth.protectPage();
