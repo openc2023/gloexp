@@ -3,6 +3,14 @@
  * db.php — SQLite 连接单例
  */
 
+// 所有 api/*.php 都会 require 这个文件，在这里统一关掉 PHP 报错/警告直接输出——
+// 服务器上很多环境 display_errors 默认是开的，一旦哪个接口踩到未定义数组键之类的
+// 警告，警告文本会直接混进本该是纯 JSON 的响应体里，前端 res.json() 直接解析失败
+// （之前 inbound.php/parcels.php 就踩过这个坑）。改成记到错误日志，不影响调试，
+// 只是不再往响应里泄漏。
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
 define('DB_PATH', __DIR__ . '/../data/express.db');
 define('SCHEMA_MAINTENANCE_VERSION', 2026072609);
 
