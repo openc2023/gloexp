@@ -60,8 +60,8 @@
     return `
       <div class="py-4 text-gray-500 dark:text-gray-300">
         <a href="index.html" class="flex items-center gap-2 px-6 mb-6">
-          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-600 text-white font-bold text-sm">快</span>
-          <span class="text-base font-semibold text-gray-800 dark:text-gray-100">快递管理系统</span>
+          <img src="assets/glo-1.svg" alt="环球移动" class="w-8 h-8 object-contain flex-shrink-0" />
+          <span class="text-base font-semibold text-gray-800 dark:text-gray-100">环球移动快递系统</span>
         </a>
         <ul class="mt-2">${items}</ul>
         ${extraItems ? `<ul class="mt-2 pt-2 mx-4 border-t border-gray-100 dark:border-gray-700">${extraItems}</ul>` : ''}
