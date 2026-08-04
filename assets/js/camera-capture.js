@@ -9,6 +9,10 @@
 const CameraCapture = (function () {
   let stream = null;
   let onCaptureCb = null;
+  // 拍出来的照片存到面单图片、条码识别也从这张图上做——太大的画布在部分手机浏览器上
+  // toBlob 会失败或产出损坏文件（这也是"拍的照片打不开"的常见原因），这里封顶到一个
+  // 既够清楚辨认条码、又不容易触发手机内存问题的尺寸。
+  const CAPTURE_MAX_DIM = 2400;
 
   function el(id) { return document.getElementById(id); }
 
@@ -36,7 +40,11 @@ const CameraCapture = (function () {
     modal.classList.remove('hidden');
     const video = el('camera-video');
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      // 主动要一个较高分辨率的画面（很多手机浏览器默认给的分辨率偏低，条码本来就小的话
+      // 更难识别）；ideal 只是期望值，设备给不了会自动降级，不会导致打不开摄像头。
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1920 } },
+      });
       video.srcObject = stream;
       await video.play();
     } catch (e) {
@@ -55,17 +63,33 @@ const CameraCapture = (function () {
 
   function capture() {
     const video = el('camera-video');
-    if (!video || !video.videoWidth) return;
+    // readyState < 2 (HAVE_CURRENT_DATA) 意味着还没有真正解码出一帧画面，这时候拍
+    // 大概率拿到的是黑屏/半帧，存下来的照片打开就是坏的——先等画面真正就绪。
+    if (!video || !video.videoWidth || video.readyState < 2) {
+      toast('摄像头画面还没准备好，请稍等一下再拍', 'err');
+      return;
+    }
+
+    let w = video.videoWidth;
+    let h = video.videoHeight;
+    const scale = Math.min(1, CAPTURE_MAX_DIM / Math.max(w, h));
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
     canvas.toBlob((blob) => {
+      if (!blob) {
+        toast('拍照失败，请重试', 'err');
+        return;
+      }
       const file = new File([blob], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       const cb = onCaptureCb;
       close();
       if (cb) cb(file);
-    }, 'image/jpeg', 0.9);
+    }, 'image/jpeg', 0.92);
   }
 
   function init() {
