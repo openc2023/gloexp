@@ -169,10 +169,24 @@ if ($action === 'update') {
             json_out(['ok' => false, 'msg' => '账号至少 2 个字符']);
         }
         if ($newUname !== $target['username']) {
-            $dupStmt = db()->prepare("SELECT id FROM users WHERE username = ? AND id != ? AND deleted_at IS NULL LIMIT 1");
+            // users.username 在数据库层是全局 UNIQUE（不区分是否软删除），但这里查重
+            // 之前只看了 deleted_at IS NULL 的未删除账号——如果改成一个已经被软删除
+            // 账号占用过的名字，这里会误判"没有重复"，真正执行 UPDATE 时才会撞上
+            // 数据库的 UNIQUE 约束，抛出没被 catch 的 PDOException，变成一个不知所云
+            // 的 500 网络异常。查重范围要覆盖软删除账号。
+            $dupStmt = db()->prepare("SELECT id, deleted_at FROM users WHERE username = ? AND id != ? LIMIT 1");
             $dupStmt->execute([$newUname, $id]);
-            if ($dupStmt->fetch()) {
-                json_out(['ok' => false, 'msg' => '账号已存在']);
+            $dup = $dupStmt->fetch();
+            if ($dup) {
+                if (empty($dup['deleted_at'])) {
+                    json_out(['ok' => false, 'msg' => '账号已存在']);
+                }
+                // 撞上的是已删除账号——名字应该让给正常账号继续用，不能因为回收站里
+                // 躺着一条早就不再活跃的记录就把这个名字永久占死。把那条软删除记录
+                // 的用户名让开（加后缀避免再撞 UNIQUE），它在回收站里其它信息不受
+                // 影响，仍然可以按需要恢复；只是不能再用这个名字恢复了。
+                db()->prepare("UPDATE users SET username = ? WHERE id = ?")
+                    ->execute([$newUname . '_deleted_' . $dup['id'] . '_' . time(), (int)$dup['id']]);
             }
             $fields[] = 'username = ?';
             $params[] = $newUname;
