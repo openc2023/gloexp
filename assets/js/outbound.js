@@ -8,6 +8,7 @@ const OB = {
   total: 0,
   status: '',
   fillImages: [],
+  pendingImageDeletes: [], // 编辑弹窗里点×移除的旧图，保存成功后才真正删物理文件（见 removeImage）
   selectedIds: new Set(),
 };
 
@@ -91,12 +92,19 @@ function updateImagesHint(count) {
   const hint = document.getElementById('fl-images-hint');
   if (hint) hint.textContent = count > 0 ? `已选择 ${count} 张` : '未选择文件';
 }
-// 移除的图片同时删掉服务器上的文件，不留孤儿文件（跟回收站彻底删除时的清理逻辑一致）。
+// 这里的图片列表始终来自已经保存过的记录（openFillModal 从 r.images 初始化），
+// 点 × 只是从这次编辑的本地草稿里移除，不能立刻删物理文件——真正保存成功之前，
+// 数据库里那条记录仍然引用着这个路径。之前是点了就立刻删文件，结果用户点了
+// × 但没点保存就关掉弹窗（或者保存失败），文件已经被删了但数据库从没更新过，
+// 刷新页面后这条记录的 images 字段里那张图还在，指向的却是个已经不存在的文件——
+// 表现出来就是"删除了图片，刷新又出现了"。现在改成先记到 OB.pendingImageDeletes
+// 里，等 submitFill 真的保存成功之后才去删这些文件；如果直接关掉弹窗不保存，
+// 待删列表清空但不动文件，数据库和文件保持一致。
 function removeImage(targetArr, previewEl, idx) {
   const [removedPath] = targetArr.splice(idx, 1);
   renderImagePreview(previewEl, targetArr, (i) => removeImage(targetArr, previewEl, i));
   updateImagesHint(targetArr.length);
-  if (removedPath) Api.deleteUploadedFile(removedPath);
+  if (removedPath) OB.pendingImageDeletes.push(removedPath);
 }
 
 // 选图/拖拽/拍照统一走这一个函数：上传图片的同时，顺手在本地识别一下面单条形码。
@@ -616,12 +624,16 @@ function openFillModal(id) {
   document.getElementById('fl-note').value = r.note || '';
   document.getElementById('fl-internal-note').value = r.internal_note || '';
   OB.fillImages = [...(r.images || [])];
+  OB.pendingImageDeletes = [];
   renderImagePreview(document.getElementById('fl-images-preview'), OB.fillImages, (idx) => removeImage(OB.fillImages, document.getElementById('fl-images-preview'), idx));
   updateImagesHint(OB.fillImages.length);
   syncTrackingRequired();
   document.getElementById('fill-modal').classList.remove('hidden');
 }
 function closeFillModal() {
+  // 取消编辑：待删列表直接丢弃，不删物理文件——数据库里还引用着这些图，
+  // 删了就跟上面 removeImage 的注释说的那个 bug 一样了。
+  OB.pendingImageDeletes = [];
   document.getElementById('fill-modal').classList.add('hidden');
 }
 
@@ -662,6 +674,9 @@ async function submitFill(e) {
     } else {
       await Api.api('outbound', 'update', { method: 'POST', params: { id }, body });
     }
+    // 保存成功了，数据库确认不再引用这些被移除的旧图，这时候删物理文件才安全。
+    OB.pendingImageDeletes.forEach((p) => Api.deleteUploadedFile(p));
+    OB.pendingImageDeletes = [];
     toast('已保存', 'ok');
     closeFillModal();
 
