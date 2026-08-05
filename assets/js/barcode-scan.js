@@ -21,9 +21,30 @@
       摩尔纹（比如对着屏幕或反光面拍）和相机噪点这类"条码本身没问题、但画面
       被高频干扰纹路弄花了"的情况。
       对于清晰度不够、本来就很小、或者被大面积反光/污渍挡住的条码，以上手段
-      都无法凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。 */
+      都无法凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。
+
+   格式限定成一维码白名单，不是"只认 Code128"，也不是"什么都试"：面单上除了
+   快递单号，往往还印着分拣码/路由码/商家内部码，一帧解码可能同时冒出好几个
+   有效条码——formats 限成常见一维码可以过滤掉二维码/PDF417 这类快递单号不会用
+   的格式（减少无关候选和运算量），但不能只留 Code128，不同快递公司用的码制
+   不一样，漏识别了反而更麻烦。
+   maxNumberOfSymbols 同理不能设成 1——"一帧只认第一个"不代表"第一个就是
+   快递单号"，设成 6 是为了让画面里所有有效条码都进候选池，交给后面的合理性
+   过滤（长度/字符集）和多帧投票去挑出真正的单号，而不是解码器随便挑一个就停。 */
 const BarcodeScan = (function () {
   let modulePrepared = null;
+
+  const TRACKING_FORMATS = ['Code128', 'Code39', 'ITF', 'EAN13', 'EAN8', 'Codabar'];
+  const MAX_SYMBOLS_PER_FRAME = 6;
+
+  // 快递单号的粗过滤：太短的（比如 6 位数字分拣码）、太长的、带非法字符的，
+  // 直接排除在候选之外，不进多帧投票，减少把无关条码误当单号的概率。这是通用
+  // 规则，没有按具体快递公司再收紧——收紧了万一识别对了快递公司却猜错格式，
+  // 反而会把真正正确的号码也过滤掉，通用规则更安全。
+  function isPlausibleTrackingNumber(text) {
+    const value = (text || '').trim();
+    return value.length >= 8 && value.length <= 30 && /^[A-Za-z0-9-]+$/.test(value);
+  }
 
   function ensureModule() {
     if (!modulePrepared) {
@@ -47,21 +68,39 @@ const BarcodeScan = (function () {
     return modulePrepared;
   }
 
-  async function decodeImageData(imageData) {
+  // 返回这一帧/这张图里所有"看起来像快递单号"的候选：校验通过 + 格式在白名单里
+  // + 长度字符集像单号。可能是 0 个、1 个，也可能好几个（面单上不止一个条码时）——
+  // 是否只有一个、要不要提示用户从多个候选里选，交给调用方（实时循环里做多帧投票，
+  // 静态图片 fallback 里直接取第一个）。
+  async function decodeCandidates(imageData) {
     try {
       await ensureModule();
       const results = await ZXingWASM.readBarcodes(imageData, {
+        formats: TRACKING_FORMATS,
         tryHarder: true,
         tryRotate: true,
         tryInvert: true,
         tryDownscale: true,
-        maxNumberOfSymbols: 1,
+        maxNumberOfSymbols: MAX_SYMBOLS_PER_FRAME,
       });
-      const hit = results.find((r) => r?.isValid && typeof r.text === 'string' && r.text.trim());
-      return hit ? hit.text.trim() : null;
+      const seen = new Set();
+      const candidates = [];
+      for (const r of results) {
+        if (!r?.isValid || typeof r.text !== 'string') continue;
+        const text = r.text.trim();
+        if (!text || !isPlausibleTrackingNumber(text) || seen.has(text)) continue;
+        seen.add(text);
+        candidates.push({ text, format: r.format });
+      }
+      return candidates;
     } catch (e) {
-      return null;
+      return [];
     }
+  }
+
+  async function decodeImageData(imageData) {
+    const candidates = await decodeCandidates(imageData);
+    return candidates.length ? candidates[0].text : null;
   }
 
   function loadImage(url) {
@@ -180,5 +219,5 @@ const BarcodeScan = (function () {
     }
   }
 
-  return { decodeFile, decodeImageData };
+  return { decodeFile, decodeImageData, decodeCandidates };
 })();
