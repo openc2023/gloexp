@@ -1,42 +1,64 @@
-/* expv7 — 条形码识别（本地 ZXing，assets/vendor/zxing，不依赖 CDN）
+/* expv7 — 条形码识别（本地 ZXing-C++ WASM，assets/vendor/zxing-wasm，不依赖 CDN）
    提供 decodeFile(file)：图片选择/拖拽/拍照上传面单图片时，顺带尝试识别条码，
    不再有独立的"扫码"弹窗入口——识别和图片上传是同一个动作，见 inbound.js / outbound.js
    里的 handleImageFiles()。
 
+   原来用的是纯 JS 移植版 ZXing（BrowserMultiFormatReader），换成 ZXing-C++ 编译出来的
+   WASM 版（zxing-wasm）——同一套 C++ 解码核心，比纯 JS 移植版本准确率明显更高，
+   自带 tryRotate（真正在解码器内部做旋转重试，能读出侧躺 90/270 度的条码——这是
+   之前纯 JS 版 decodeFromImageUrl 这条路径做不到的，当时验证过是库本身的限制，
+   转了也没用；WASM 版本身支持，不是我们代码层面能不能做的问题）和 tryInvert
+   （黑白反色打印的条码）。
+
    识别策略（从便宜到贵，逐级 fallback）：
-   1. 先对整张图直接解码一次（大多数情况条码本来就不算小，直接就中，最快）。
+   1. 先对整张图直接解码一次，交给 WASM 核心自己做 tryHarder/tryRotate/tryInvert/
+      tryDownscale——大多数情况条码本来就不算小，直接就中，最快。
    2. 失败再切成若干张有重叠的局部裁剪图，逐块在各自原始分辨率下解码——
       专门应对"图片本身很大很清晰，但条码在画面里只占一小块"：整图一起丢给
       解码器时条码占的有效像素比例太低，切块后占比被放大，成功率明显更高。
       （小图切块没意义，跳过。）
    3. 上面都不行，做一次中值滤波去噪再重新走一遍直接解码/切块——专门应对
       摩尔纹（比如对着屏幕或反光面拍）和相机噪点这类"条码本身没问题、但画面
-      被高频干扰纹路弄花了"的情况。中值滤波对这种局部离群像素特别有效，
-      比 NLM 计算量小得多，纯 JS 在手机上跑单张图也就一两秒，作为最后一级
-      兜底可以接受。
+      被高频干扰纹路弄花了"的情况。
       对于清晰度不够、本来就很小、或者被大面积反光/污渍挡住的条码，以上手段
-      都无法凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。
-
-      （曾经在这里加过一级"整图转 90/180/270 度重试"，后来验证发现纯粹是
-      浪费时间就去掉了：180 度的情况其实第 1 步直接解码就已经能读出来
-      （ZXing 对一维码的首尾方向本来就不敏感），而 90/270 度真正"侧躺"的
-      条码，不管转不转、ZXing 这条浏览器解码路径都读不出来——是库本身在
-      这条 API 上的限制，转了也没用，白白多花好几秒。） */
+      都无法凭空造出细节，帮不上忙——这种只能让客户重新提供更清楚的照片。 */
 const BarcodeScan = (function () {
-  let reader = null;
-  function ensureReader() {
-    if (!reader) {
-      const hints = new Map();
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true); // 单张静态图解码，不追求实时速度，宁可多花点时间换成功率
-      reader = new ZXing.BrowserMultiFormatReader(hints);
+  let modulePrepared = null;
+
+  function ensureModule() {
+    if (!modulePrepared) {
+      modulePrepared = (async () => {
+        if (!window.ZXingWASM) {
+          throw new Error('条形码识别核心未加载');
+        }
+        await ZXingWASM.prepareZXingModule({
+          fireImmediately: true,
+          overrides: {
+            locateFile(path, prefix) {
+              if (path.endsWith('.wasm')) {
+                return 'assets/vendor/zxing-wasm/zxing_reader.wasm';
+              }
+              return prefix + path;
+            },
+          },
+        });
+      })();
     }
-    return reader;
+    return modulePrepared;
   }
 
-  async function decodeImageUrl(url) {
+  async function decodeImageData(imageData) {
     try {
-      const result = await ensureReader().decodeFromImageUrl(url);
-      return result.getText();
+      await ensureModule();
+      const results = await ZXingWASM.readBarcodes(imageData, {
+        tryHarder: true,
+        tryRotate: true,
+        tryInvert: true,
+        tryDownscale: true,
+        maxNumberOfSymbols: 1,
+      });
+      const hit = results.find((r) => r?.isValid && typeof r.text === 'string' && r.text.trim());
+      return hit ? hit.text.trim() : null;
     } catch (e) {
       return null;
     }
@@ -49,6 +71,15 @@ const BarcodeScan = (function () {
       img.onerror = reject;
       img.src = url;
     });
+  }
+
+  function imageDataFrom(img, sx, sy, sw, sh) {
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    return ctx.getImageData(0, 0, sw, sh);
   }
 
   // 3x3 网格切块，格子间留 20% 重叠，避免条码正好卡在切割线上被拦腰切断。
@@ -71,28 +102,20 @@ const BarcodeScan = (function () {
     }
 
     for (const t of tiles) {
-      const canvas = document.createElement('canvas');
-      canvas.width = t.w;
-      canvas.height = t.h;
-      canvas.getContext('2d').drawImage(img, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
-      // 用无损 PNG，不要 JPEG——JPEG 的有损压缩会在条码黑白边缘introduce新的振铃
-      // 伪影，把切块/去噪好不容易换来的清晰边缘又弄花，实测验证过这个区别是真的：
-      // 同一张去噪后的图，PNG 能解出来，JPEG（92% 质量）解不出来。这些图片只是
-      // 临时拿去解码、不会上传/存储，用 PNG 也没有体积代价。
-      const text = await decodeImageUrl(canvas.toDataURL('image/png'));
+      const imageData = imageDataFrom(img, t.x, t.y, t.w, t.h);
+      const text = await decodeImageData(imageData);
       if (text) return text;
     }
     return null;
   }
 
-  // 灰度化 + 中值滤波去噪：先转灰度（条码识别本来就是黑白模式，色彩通道没用，
-  // 顺带减少后续计算量），再用一个小窗口的中值滤波把摩尔纹/噪点这类局部离群
-  // 像素抹掉，同时尽量保留条码黑白边缘的清晰度（中值滤波对保边缘比均值模糊要好）。
+  // 灰度化 + 中值滤波去噪：先转灰度，再用一个小窗口的中值滤波把摩尔纹/噪点这类
+  // 局部离群像素抹掉，同时尽量保留条码黑白边缘的清晰度。
   function medianDenoise(img, radius = 1) {
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const { data, width, height } = imageData;
@@ -130,17 +153,14 @@ const BarcodeScan = (function () {
     if (!file || !file.type || !file.type.startsWith('image/')) return null;
     const url = URL.createObjectURL(file);
     try {
-      const direct = await decodeImageUrl(url);
-      if (direct) return direct;
-
       const img = await loadImage(url).catch(() => null);
       if (!img || !img.naturalWidth) return null;
 
-      // 之前拿 1600x1600（约 256 万像素）当"值不值得切块"的门槛，是照着一张刻意造的
-      // 3000x3000 测试图拍脑袋定的——真实测试发现一张很普通的 1080x1920（约 207 万
-      // 像素）手机截图/照片会被这个门槛卡在外面，切块压根没机会跑，明显定高了。
-      // 改成一个宽松很多的门槛：只要不是明显很小的缩略图（3x3 切完每块还有点分辨率
-      // 可用）就值得试一次，切块本身也不贵。
+      const direct = await decodeImageData(imageDataFrom(img, 0, 0, img.naturalWidth, img.naturalHeight));
+      if (direct) return direct;
+
+      // 门槛比较宽松：只要不是明显很小的缩略图（3x3 切完每块还有点分辨率可用）
+      // 就值得试一次切块，切块本身也不贵。
       const big = img.naturalWidth * img.naturalHeight >= 700 * 700;
       if (big) {
         const tiled = await decodeTiled(img);
@@ -149,7 +169,9 @@ const BarcodeScan = (function () {
 
       // 最后一级：去噪后再试一遍整图直接解码 + 切块（大图才切块，小图没意义）
       const denoisedCanvas = medianDenoise(img);
-      const denoisedText = await decodeImageUrl(denoisedCanvas.toDataURL('image/png'));
+      const denoisedCtx = denoisedCanvas.getContext('2d', { willReadFrequently: true });
+      const denoisedData = denoisedCtx.getImageData(0, 0, denoisedCanvas.width, denoisedCanvas.height);
+      const denoisedText = await decodeImageData(denoisedData);
       if (denoisedText) return denoisedText;
       if (big) return await decodeTiled(denoisedCanvas);
       return null;
