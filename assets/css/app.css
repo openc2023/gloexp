@@ -22,6 +22,14 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
+/* 全站禁止双击放大——用 touch-action: manipulation 而不是 viewport 的
+   user-scalable=no：后者会把双指缩放也一起禁掉，对需要放大看清内容的用户
+   不友好；manipulation 只关掉双击/双指快速点击触发的那个"意外放大"手势，
+   双指缩放这种用户主动要放大的操作不受影响。 */
+html {
+  touch-action: manipulation;
+}
+
 /* 侧边栏折叠过渡 */
 #sidebar {
   transition: transform 0.25s ease-in-out;
