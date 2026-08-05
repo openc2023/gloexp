@@ -102,13 +102,15 @@ function removeImage(targetArr, previewEl, idx) {
 // 选图/拖拽/拍照统一走这一个函数：上传图片的同时，顺手在本地识别一下面单条形码。
 // 新上传的图片是明确的"重新扫一下"动作，所以识别到就直接填（覆盖旧单号也一样），
 // 不因为单号框里已经有内容就跳过识别——只是覆盖时提示一下原来的值，方便发现认错。
-async function handleImageFiles(files, targetArr, previewEl, trackingElId) {
+async function handleImageFiles(files, targetArr, previewEl, trackingElId, knownText) {
   const list = Array.from(files || []).filter((f) => f.type && f.type.startsWith('image/'));
   if (!list.length) return;
 
   const trackingInput = trackingElId ? document.getElementById(trackingElId) : null;
-  let scannedText = null;
-  if (trackingInput) {
+  // knownText：拍照弹窗实时识别循环已经连续确认过的号码（见 camera-capture.js），
+  // 拍下来的这张照片没必要再重新跑一遍解码——直接采信用户拍照前就已经在状态栏看到的结果。
+  let scannedText = knownText || null;
+  if (trackingInput && !scannedText) {
     for (const file of list) {
       scannedText = await BarcodeScan.decodeFile(file);
       if (scannedText) break;
@@ -336,14 +338,15 @@ function closeRowScanModal() {
   ROW_SCAN_ID = null;
 }
 
-async function processRowScanFile(file) {
+async function processRowScanFile(file, knownText) {
   const id = ROW_SCAN_ID;
   closeRowScanModal();
   if (!id || !file || !file.type || !file.type.startsWith('image/')) return;
 
   const row = getRow(id);
+  // knownText：拍照弹窗实时识别循环已经连续确认过的号码，不用再重新解码一遍。
   const [text, uploadedPath] = await Promise.all([
-    BarcodeScan.decodeFile(file),
+    knownText ? Promise.resolve(knownText) : BarcodeScan.decodeFile(file),
     Api.uploadFile(file).catch(() => null),
   ]);
 
@@ -822,8 +825,8 @@ async function initOutbound() {
     e.target.value = '';
   });
   document.getElementById('fl-btn-camera').addEventListener('click', () => {
-    CameraCapture.open((file) => {
-      if (file) handleImageFiles([file], OB.fillImages, document.getElementById('fl-images-preview'), 'fl-tracking');
+    CameraCapture.open((file, recognizedText) => {
+      if (file) handleImageFiles([file], OB.fillImages, document.getElementById('fl-images-preview'), 'fl-tracking', recognizedText);
     });
   });
   const flDropzone = document.getElementById('fl-images-dropzone');
@@ -854,7 +857,7 @@ async function initOutbound() {
   document.getElementById('row-scan-btn-camera').addEventListener('click', () => {
     // 只隐藏面板，不清空 ROW_SCAN_ID——摄像头拍完之后 processRowScanFile 还要用它
     document.getElementById('row-scan-modal').classList.add('hidden');
-    CameraCapture.open((file) => processRowScanFile(file));
+    CameraCapture.open((file, recognizedText) => processRowScanFile(file, recognizedText));
   });
   document.querySelectorAll('[data-close-row-scan]').forEach((el) => el.addEventListener('click', closeRowScanModal));
 

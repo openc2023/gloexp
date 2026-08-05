@@ -155,13 +155,15 @@ function removeImage(targetArr, previewEl, idx) {
 // 选图/拖拽/拍照统一走这一个函数：上传图片的同时，顺手在本地识别一下面单条形码。
 // 新上传的图片是明确的"重新扫一下"动作，所以识别到就直接填（覆盖旧单号也一样），
 // 不因为单号框里已经有内容就跳过识别——只是覆盖时提示一下原来的值，方便发现认错。
-async function handleImageFiles(files, targetArr, previewEl, trackingElId) {
+async function handleImageFiles(files, targetArr, previewEl, trackingElId, knownText) {
   const list = Array.from(files || []).filter((f) => f.type && f.type.startsWith('image/'));
   if (!list.length) return;
 
   const trackingInput = trackingElId ? document.getElementById(trackingElId) : null;
-  let scannedText = null;
-  if (trackingInput) {
+  // knownText：拍照弹窗实时识别循环已经连续确认过的号码（见 camera-capture.js），
+  // 拍下来的这张照片没必要再重新跑一遍解码——直接采信用户拍照前就已经在状态栏看到的结果。
+  let scannedText = knownText || null;
+  if (trackingInput && !scannedText) {
     for (const file of list) {
       scannedText = await BarcodeScan.decodeFile(file);
       if (scannedText) break;
@@ -311,8 +313,8 @@ async function initInbound() {
     e.target.value = '';
   });
   document.getElementById('ib-btn-camera')?.addEventListener('click', () => {
-    CameraCapture.open((file) => {
-      if (file) handleImageFiles([file], IB.createImages, document.getElementById('ib-images-preview'), 'ib-tracking');
+    CameraCapture.open((file, recognizedText) => {
+      if (file) handleImageFiles([file], IB.createImages, document.getElementById('ib-images-preview'), 'ib-tracking', recognizedText);
     });
   });
   const ibDropzone = document.getElementById('ib-images-dropzone');

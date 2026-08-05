@@ -180,5 +180,5 @@ const BarcodeScan = (function () {
     }
   }
 
-  return { decodeFile };
+  return { decodeFile, decodeImageData };
 })();
