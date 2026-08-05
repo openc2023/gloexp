@@ -87,14 +87,51 @@ const CameraCapture = (function () {
     scanStatusEl = document.createElement('div');
     scanStatusEl.id = 'camera-scan-status';
     scanStatusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium';
+    Object.assign(scanStatusEl.style, {
+      position: 'absolute',
+      left: '50%',
+      bottom: '12px',
+      transform: 'translateX(-50%)',
+      width: 'min(92%, 580px)',
+      zIndex: '6',
+      boxShadow: '0 2px 12px rgba(0,0,0,.35)',
+    });
     scanChoicesEl = document.createElement('div');
     scanChoicesEl.id = 'camera-scan-choices';
     scanChoicesEl.className = 'mt-2 flex flex-wrap gap-2 justify-center hidden';
-    // 状态和候选放在画面包装层外，避免被扫码遮罩或 overflow 裁掉。
-    const anchor = el('camera-scan-stage') || video;
-    anchor.insertAdjacentElement('afterend', scanStatusEl);
-    scanStatusEl.insertAdjacentElement('afterend', scanChoicesEl);
+    // 主状态固定覆盖在画面底部，手机上不会被高视频挤到屏幕外；候选按钮仍放在画面外。
+    const stage = el('camera-scan-stage');
+    if (stage) {
+      stage.appendChild(scanStatusEl);
+      stage.insertAdjacentElement('afterend', scanChoicesEl);
+    } else {
+      video.insertAdjacentElement('afterend', scanStatusEl);
+      scanStatusEl.insertAdjacentElement('afterend', scanChoicesEl);
+    }
     return scanStatusEl;
+  }
+
+  function showCameraStatus(text, kind = 'info') {
+    const statusEl = ensureScanStatusEl();
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    const colors = {
+      ok: '#059669',
+      warn: '#d97706',
+      err: '#dc2626',
+      info: 'rgba(17,24,39,.94)',
+    };
+    statusEl.className = 'px-3 py-2 rounded-md text-sm text-center font-medium';
+    statusEl.style.backgroundColor = colors[kind] || colors.info;
+    statusEl.style.color = '#fff';
+  }
+
+  function setCaptureButtonBusy(busy, text) {
+    const button = el('camera-btn-shoot');
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = text || (busy ? '处理中…' : '拍摄');
+    button.style.opacity = busy ? '0.65' : '';
   }
 
   function ensureScanGuide() {
@@ -109,6 +146,7 @@ const CameraCapture = (function () {
     stage.style.borderRadius = '0.375rem';
     video.parentNode.insertBefore(stage, video);
     stage.appendChild(video);
+    video.style.maxHeight = 'min(68vh, 620px)';
 
     scanGuideEl = document.createElement('div');
     scanGuideEl.id = 'camera-scan-guide';
@@ -178,6 +216,8 @@ const CameraCapture = (function () {
   function updateScanStatus(ambiguous) {
     const statusEl = ensureScanStatusEl();
     if (!statusEl) return;
+    statusEl.style.backgroundColor = '';
+    statusEl.style.color = '';
     const confirmed = liveCode && Date.now() < lockedUntil;
     setScanGuideReady(!!confirmed);
 
@@ -448,6 +488,8 @@ const CameraCapture = (function () {
     const title = modal.querySelector('h3');
     if (title) title.textContent = options.title || '拍照上传';
     modal.classList.remove('hidden');
+    setCaptureButtonBusy(false, '拍摄');
+    showCameraStatus('正在请求摄像头权限…', 'warn');
     const video = el('camera-video');
     try {
       // 主动要一个较高分辨率的画面（很多手机浏览器默认给的分辨率偏低，条码本来就小的话
@@ -476,6 +518,7 @@ const CameraCapture = (function () {
       updateScanGuidePosition();
       startScanLoop();
     } catch (e) {
+      toast('摄像头打开失败，已切换到系统拍照/选图', 'err', 4200);
       close(false);
       fallbackFilePick(onCapture, options.onCancel);
     }
@@ -497,6 +540,8 @@ const CameraCapture = (function () {
 
   function capture() {
     const video = el('camera-video');
+    const shootButton = el('camera-btn-shoot');
+    if (shootButton?.disabled) return;
     // readyState < 2 (HAVE_CURRENT_DATA) 意味着还没有真正解码出一帧画面，这时候拍
     // 大概率拿到的是黑屏/半帧，存下来的照片打开就是坏的——先等画面真正就绪。
     if (!video || !video.videoWidth || video.readyState < 2) {
@@ -508,6 +553,12 @@ const CameraCapture = (function () {
     // 用户在按下快门前就已经在状态栏看到了这个号码，拍出来的静态照片再重新识别一遍
     // 反而可能因为摩尔纹等原因得到不一致的结果，没必要多此一举。
     const recognizedText = (liveCode && Date.now() < lockedUntil) ? liveCode : null;
+    stopScanLoop();
+    setCaptureButtonBusy(true, '正在拍照…');
+    showCameraStatus(
+      recognizedText ? `已锁定单号 ${recognizedText}，正在拍照…` : '正在拍照，请保持稳定…',
+      recognizedText ? 'ok' : 'warn'
+    );
 
     let w = video.videoWidth;
     let h = video.videoHeight;
@@ -519,15 +570,33 @@ const CameraCapture = (function () {
     canvas.width = w;
     canvas.height = h;
     canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) {
         toast('拍照失败，请重试', 'err');
+        setCaptureButtonBusy(false, '重新拍摄');
+        showCameraStatus('拍照失败，请重新拍摄', 'err');
+        startScanLoop();
         return;
       }
       const file = new File([blob], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       const cb = onCaptureCb;
-      close(false);
-      if (cb) cb(file, recognizedText);
+      const reportStatus = (text, kind = 'info') => showCameraStatus(text, kind);
+      reportStatus(
+        recognizedText
+          ? `已确认单号 ${recognizedText}，正在检查并保存…`
+          : '拍照完成，正在进行多尺寸识别…',
+        recognizedText ? 'ok' : 'warn'
+      );
+      setCaptureButtonBusy(true, recognizedText ? '正在保存…' : '正在识别…');
+      try {
+        if (cb) await cb(file, recognizedText, reportStatus);
+      } catch (error) {
+        console.error('拍照后处理失败：', error);
+        toast('照片处理失败，请重试', 'err');
+      } finally {
+        close(false);
+        setCaptureButtonBusy(false, '拍摄');
+      }
     }, 'image/jpeg', 0.92);
   }
 

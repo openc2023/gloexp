@@ -169,7 +169,7 @@ async function checkInboundTrackingDuplicate(tracking) {
 // 选图/拖拽/拍照统一走这一个函数：上传图片的同时，顺手在本地识别一下面单条形码。
 // 新上传的图片是明确的"重新扫一下"动作，所以识别到就直接填（覆盖旧单号也一样），
 // 不因为单号框里已经有内容就跳过识别——只是覆盖时提示一下原来的值，方便发现认错。
-async function handleImageFiles(files, targetArr, previewEl, trackingElId, knownText) {
+async function handleImageFiles(files, targetArr, previewEl, trackingElId, knownText, reportStatus) {
   const list = Array.from(files || []).filter((f) => f.type && f.type.startsWith('image/'));
   if (!list.length) return;
 
@@ -178,6 +178,7 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
   // 拍下来的这张照片没必要再重新跑一遍解码——直接采信用户拍照前就已经在状态栏看到的结果。
   let scannedText = knownText || null;
   if (trackingInput && !scannedText) {
+    reportStatus?.('拍照完成，正在进行多尺寸条码识别…', 'warn');
     for (const file of list) {
       const courierName = document.getElementById('ib-courier')?.selectedOptions?.[0]?.textContent || '';
       const candidates = await BarcodeScan.decodeFileCandidates(file, { courierName });
@@ -189,12 +190,14 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
   }
 
   for (const file of list) {
+    reportStatus?.('正在上传面单 / 包裹图片…', 'info');
     try { targetArr.push(await Api.uploadFile(file)); } catch (e) { /* toast already shown */ }
   }
   renderImagePreview(previewEl, targetArr, (idx) => removeImage(targetArr, previewEl, idx));
   updateImagesHint(targetArr.length);
 
   if (scannedText && trackingInput) {
+    reportStatus?.('已识别单号，正在检查是否重复…', 'info');
     const duplicateCheck = await checkInboundTrackingDuplicate(scannedText.trim().toUpperCase());
     if (duplicateCheck.blocked) scannedText = null;
     if (duplicateCheck.exists) {
@@ -209,6 +212,9 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
     toast(prev && prev !== scannedText.trim().toUpperCase()
       ? `已从图片识别单号，原单号 ${prev} 已替换为 ${scannedText}`
       : '已从图片自动识别单号：' + scannedText, 'ok');
+    reportStatus?.(`识别成功：${scannedText}，图片已添加`, 'ok');
+  } else {
+    reportStatus?.('图片已添加；未识别到可用的新单号', 'warn');
   }
 }
 
@@ -341,8 +347,9 @@ async function initInbound() {
   });
   document.getElementById('ib-btn-camera')?.addEventListener('click', () => {
     const courierName = document.getElementById('ib-courier')?.selectedOptions?.[0]?.textContent || '';
-    CameraCapture.open((file, recognizedText) => {
-      if (file) handleImageFiles([file], IB.createImages, document.getElementById('ib-images-preview'), 'ib-tracking', recognizedText);
+    CameraCapture.open((file, recognizedText, reportStatus) => {
+      if (file) return handleImageFiles([file], IB.createImages, document.getElementById('ib-images-preview'), 'ib-tracking', recognizedText, reportStatus);
+      return null;
     }, { mode: 'image-upload', title: '拍摄面单 / 包裹图片', courierName });
   });
   const ibDropzone = document.getElementById('ib-images-dropzone');
