@@ -120,8 +120,11 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
   let scannedText = knownText || null;
   if (trackingInput && !scannedText) {
     for (const file of list) {
-      scannedText = await BarcodeScan.decodeFile(file);
-      if (scannedText) break;
+      const courierName = document.getElementById('fl-courier')?.selectedOptions?.[0]?.textContent || '';
+      const candidates = await BarcodeScan.decodeFileCandidates(file, { courierName });
+      if (!candidates.length) continue;
+      scannedText = await BarcodeScan.chooseCandidate(candidates);
+      break;
     }
   }
 
@@ -300,6 +303,7 @@ function trackingCellHtml(r) {
 
 function openTrackingInlineEdit(id) {
   const row = getRow(id);
+  const courierName = row?.courier_name || getCourierForRow(row)?.name || '';
   const cell = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`);
   if (!row || !cell) return;
   cell.innerHTML = `
@@ -354,7 +358,9 @@ async function processRowScanFile(file, knownText) {
   const row = getRow(id);
   // knownText：拍照弹窗实时识别循环已经连续确认过的号码，不用再重新解码一遍。
   const [text, uploadedPath] = await Promise.all([
-    knownText ? Promise.resolve(knownText) : BarcodeScan.decodeFile(file),
+    knownText
+      ? Promise.resolve(knownText)
+      : BarcodeScan.decodeFileCandidates(file, { courierName }).then((candidates) => BarcodeScan.chooseCandidate(candidates)),
     Api.uploadFile(file).catch(() => null),
   ]);
 

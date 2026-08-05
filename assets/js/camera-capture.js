@@ -15,20 +15,26 @@ const CameraCapture = (function () {
   const CAPTURE_MAX_DIM = 2400;
 
   // 摄像头预览时后台跑一个轻量实时识别循环，让用户在按下拍摄之前就能看到"识别到了
-  // 没有"，不用盲拍。这不是参考实现里那套面向"连续扫很多个包裹"的完整投票系统，
-  // 咱们是"开一次摄像头、拍一张、关掉"的单次场景，窗口不用留那么长；但也不能只按
-  // "连续两帧就确认"处理——面单上除了快递单号，往往还有分拣码/路由码/商家内部码，
+  // 没有"，不用盲拍。实时主链路对齐已经验证效果很好的测试页：Code128、1280 全画面、
+  // 8 帧容错窗口和 6.5 秒结果锁定；同时保留连续两帧快速确认。面单上除了快递单号，
+  // 往往还有分拣码/路由码/商家内部码，因此其他一维格式只在 Code128 连续失败后低频尝试。
   // 一帧可能同时解出好几个有效条码，每个候选都要独立计票，且解码器返回的顺序不代表
   // 哪个是真正的快递单号。所以这里对每个候选文本分别维护"滑动窗口累计次数"和
   // "连续命中次数"，同时满足其一即可视为该候选已确认；如果同一时刻有不止一个候选
   // 都被确认了，不擅自二选一，交给用户点选。
-  const SCAN_INTERVAL_MS = 450;
-  const VOTE_WINDOW_SIZE = 5; // 最近几帧的滑动窗口
+  const SCAN_DELAY_MS = 430; // 每轮完成后再等待，不让低端手机堆积解码任务
+  const VOTE_WINDOW_SIZE = 8; // 与高准确率测试页一致
   const VOTES_TO_CONFIRM = 3; // 窗口内累计出现够这么多次也算确认（容忍偶尔漏帧）
   const CONSECUTIVE_TO_CONFIRM = 2; // 连续命中够这么多帧，不用等满窗口也能提前确认
-  const MISS_TOLERANCE = 5; // 完全没有任何候选时，允许连续几帧空手不清空历史（应对自动对焦短暂重新搜索）
-  const LOCK_HOLD_MS = 4000; // 确认后即使后面几帧漏检，结果仍保留这么久——防止用户刚看到绿色去点拍摄的一瞬间又变灰
-  const SCAN_MAX_SIDE = 900; // 实时循环用的取帧尺寸，比正式拍照小很多，换取每秒能多跑几次
+  const CANDIDATE_MISS_TOLERANCE = 6;
+  const LOCKED_MISS_TOLERANCE = 14;
+  const LOCK_HOLD_MS = 6500;
+  const FULL_FRAME_MAX_SIDE = 1280;
+  const FALLBACK_AFTER_MISSES = 5;
+  const FALLBACK_EVERY = 3;
+  const PRIMARY_FORMATS = ['Code128'];
+  const FALLBACK_FORMATS = ['Code39', 'ITF', 'EAN13', 'EAN8', 'Codabar'];
+  const ROI_RECT = Object.freeze({ x: 0.05, y: 0.325, width: 0.9, height: 0.35 });
 
   let scanTimer = null;
   let scanBusy = false;
@@ -40,6 +46,12 @@ const CameraCapture = (function () {
   let missCount = 0; // 连续多少帧完全没有候选
   let liveCode = ''; // 已确认且当前生效的号码（唯一确认，或用户从多个候选里点选后的结果）
   let lockedUntil = 0;
+  let scanFrameNo = 0;
+  let scanSession = 0;
+  let scanGuideEl = null;
+  let lastScanErrorAt = 0;
+  let cameraDiagnostics = null;
+  let liveCandidateMeta = new Map();
 
   function el(id) { return document.getElementById(id); }
 
@@ -71,12 +83,74 @@ const CameraCapture = (function () {
     return scanStatusEl;
   }
 
+  function ensureScanGuide() {
+    const video = el('camera-video');
+    if (!video) return null;
+    if (scanGuideEl && document.body.contains(scanGuideEl)) return scanGuideEl;
+
+    const stage = document.createElement('div');
+    stage.id = 'camera-scan-stage';
+    stage.style.position = 'relative';
+    stage.style.overflow = 'hidden';
+    stage.style.borderRadius = '0.375rem';
+    video.parentNode.insertBefore(stage, video);
+    stage.appendChild(video);
+
+    scanGuideEl = document.createElement('div');
+    scanGuideEl.id = 'camera-scan-guide';
+    scanGuideEl.setAttribute('aria-hidden', 'true');
+    Object.assign(scanGuideEl.style, {
+      position: 'absolute',
+      pointerEvents: 'none',
+      border: '3px solid #fbbf24',
+      borderRadius: '12px',
+      boxShadow: '0 0 0 9999px rgba(0,0,0,.30)',
+      transition: 'border-color .18s, box-shadow .18s',
+    });
+    stage.appendChild(scanGuideEl);
+    updateScanGuidePosition();
+    return scanGuideEl;
+  }
+
+  // 扫描区域按摄像头原始画面的比例定义。下面只负责把相同区域映射到 object-fit:contain
+  // 的屏幕显示位置，因此横竖屏、黑边和不同手机分辨率都不需要单独配置。
+  function updateScanGuidePosition() {
+    const video = el('camera-video');
+    if (!video || !scanGuideEl || !video.videoWidth || !video.videoHeight) return;
+    const boxW = video.clientWidth;
+    const boxH = video.clientHeight;
+    if (!boxW || !boxH) return;
+
+    const scale = Math.min(boxW / video.videoWidth, boxH / video.videoHeight);
+    const contentW = video.videoWidth * scale;
+    const contentH = video.videoHeight * scale;
+    const offsetX = (boxW - contentW) / 2;
+    const offsetY = (boxH - contentH) / 2;
+    Object.assign(scanGuideEl.style, {
+      left: `${offsetX + contentW * ROI_RECT.x}px`,
+      top: `${offsetY + contentH * ROI_RECT.y}px`,
+      width: `${contentW * ROI_RECT.width}px`,
+      height: `${contentH * ROI_RECT.height}px`,
+    });
+  }
+
+  function setScanGuideReady(ready) {
+    if (!scanGuideEl) return;
+    scanGuideEl.style.borderColor = ready ? '#34d399' : '#fbbf24';
+    scanGuideEl.style.boxShadow = ready
+      ? '0 0 20px rgba(52,211,153,.75), 0 0 0 9999px rgba(0,0,0,.22)'
+      : '0 0 0 9999px rgba(0,0,0,.30)';
+  }
+
   function resetScanState() {
     voteWindow = [];
     consecutiveHits = new Map();
     missCount = 0;
     liveCode = '';
     lockedUntil = 0;
+    scanFrameNo = 0;
+    liveCandidateMeta = new Map();
+    setScanGuideReady(false);
     if (scanChoicesEl) { scanChoicesEl.innerHTML = ''; scanChoicesEl.classList.add('hidden'); }
   }
 
@@ -91,6 +165,7 @@ const CameraCapture = (function () {
     const statusEl = ensureScanStatusEl();
     if (!statusEl) return;
     const confirmed = liveCode && Date.now() < lockedUntil;
+    setScanGuideReady(!!confirmed);
 
     if (ambiguous && ambiguous.length > 1 && !confirmed) {
       statusEl.textContent = `检测到 ${ambiguous.length} 个不同的有效条码，请点选快递单号：`;
@@ -104,8 +179,8 @@ const CameraCapture = (function () {
     if (confirmed) {
       statusEl.textContent = `已识别：${liveCode}，可以拍照`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
-    } else if (consecutiveHits.size > 0) {
-      const top = [...consecutiveHits.entries()].sort((a, b) => b[1] - a[1])[0];
+    } else if ([...consecutiveHits.values()].some((count) => count > 0)) {
+      const top = [...consecutiveHits.entries()].filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])[0];
       statusEl.textContent = `识别中…看到号码 ${top[0]}`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400';
     } else {
@@ -114,21 +189,128 @@ const CameraCapture = (function () {
     }
   }
 
-  async function scanOneFrame() {
+  function captureVideoRegion(video, region, maxSide) {
+    if (!scanCanvas) scanCanvas = document.createElement('canvas');
+    const sx = Math.max(0, Math.round(video.videoWidth * region.x));
+    const sy = Math.max(0, Math.round(video.videoHeight * region.y));
+    const sw = Math.max(1, Math.min(video.videoWidth - sx, Math.round(video.videoWidth * region.width)));
+    const sh = Math.max(1, Math.min(video.videoHeight - sy, Math.round(video.videoHeight * region.height)));
+    const scale = Math.min(1, maxSide / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+    scanCanvas.width = w;
+    scanCanvas.height = h;
+    const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  function positionCenter(position) {
+    if (!position || typeof position !== 'object') return null;
+    const points = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
+      .map((key) => position[key])
+      .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    if (!points.length) return null;
+    return {
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+    };
+  }
+
+  function isPositionInGuide(position, width, height) {
+    const center = positionCenter(position);
+    if (!center) return false;
+    return center.x >= width * ROI_RECT.x &&
+      center.x <= width * (ROI_RECT.x + ROI_RECT.width) &&
+      center.y >= height * ROI_RECT.y &&
+      center.y <= height * (ROI_RECT.y + ROI_RECT.height);
+  }
+
+  async function timedDecode(imageData, options, label) {
+    const startedAt = performance.now();
+    const candidates = await BarcodeScan.decodeCandidates(imageData, options);
+    const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+    if (cameraDiagnostics) {
+      cameraDiagnostics.lastAttempts ||= [];
+      cameraDiagnostics.lastAttempts.push({ label, durationMs, candidates: candidates.length });
+    }
+    return candidates;
+  }
+
+  async function decodeAdaptiveFrame(video, frameNo, session) {
+    if (cameraDiagnostics) cameraDiagnostics.lastAttempts = [];
+    const fullImage = captureVideoRegion(
+      video,
+      { x: 0, y: 0, width: 1, height: 1 },
+      FULL_FRAME_MAX_SIDE
+    );
+
+    // 主链路完全对齐测试页：每轮先用 1280 全画面只识别 Code128。
+    let candidates = await timedDecode(fullImage, {
+      formats: PRIMARY_FORMATS,
+      maxNumberOfSymbols: 12,
+    }, 'Code128 全画面 1280');
+    if (session !== scanSession) return [];
+
+    // 连续若干轮没有 Code128 后才低频尝试其他一维格式，避免每轮扩大搜索空间。
+    if (!candidates.length && missCount >= FALLBACK_AFTER_MISSES && frameNo % FALLBACK_EVERY === 0) {
+      candidates = await timedDecode(fullImage, {
+        formats: FALLBACK_FORMATS,
+        maxNumberOfSymbols: 6,
+      }, '其他一维码低频兜底');
+      if (session !== scanSession) return [];
+    }
+
+    return candidates.map((candidate) => ({
+      ...candidate,
+      inGuide: isPositionInGuide(candidate.position, fullImage.width, fullImage.height),
+    }));
+  }
+
+  function selectedCourierName() {
+    const select = el('ib-courier') || el('fl-courier');
+    return select?.selectedOptions?.[0]?.textContent || '';
+  }
+
+  function courierRuleBonus(text) {
+    const name = selectedCourierName();
+    if (/(顺丰|sf)/i.test(name) && /^SF[A-Z0-9]{10,}$/i.test(text)) return 120;
+    if (/(ems|邮政|우체국)/i.test(name) && (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(text) || /^\d{13}$/.test(text))) return 120;
+    if (/ups/i.test(name) && /^1Z[A-Z0-9]{16}$/i.test(text)) return 120;
+    if (/fedex/i.test(name) && /^\d{12,15}$/.test(text)) return 120;
+    if (/dhl/i.test(name) && /^\d{10}$/.test(text)) return 120;
+    return 0;
+  }
+
+  function liveCandidateScore(text, voteCounts) {
+    const meta = liveCandidateMeta.get(text) || {};
+    const formatScore = { Code128: 30, Code39: 22, ITF: 18, EAN13: 14, EAN8: 8, Codabar: 6 };
+    return (voteCounts.get(text) || 0) * 100 +
+      (consecutiveHits.get(text) || 0) * 20 +
+      (formatScore[meta.format] || 0) +
+      (meta.inGuide ? 25 : 0) +
+      Math.min(text.length, 20) +
+      courierRuleBonus(text);
+  }
+
+  async function scanOneFrame(session) {
     const video = el('camera-video');
-    if (!video || !video.videoWidth || video.readyState < 2 || scanBusy || !window.BarcodeScan) return;
+    if (session !== scanSession || !video || !video.videoWidth || video.readyState < 2 || scanBusy || !window.BarcodeScan) return;
     scanBusy = true;
+    const startedAt = performance.now();
     try {
-      if (!scanCanvas) scanCanvas = document.createElement('canvas');
-      const scale = Math.min(1, SCAN_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight));
-      const w = Math.max(1, Math.round(video.videoWidth * scale));
-      const h = Math.max(1, Math.round(video.videoHeight * scale));
-      scanCanvas.width = w;
-      scanCanvas.height = h;
-      const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(video, 0, 0, w, h);
-      const candidates = await BarcodeScan.decodeCandidates(ctx.getImageData(0, 0, w, h));
+      scanFrameNo += 1;
+      const candidates = await decodeAdaptiveFrame(video, scanFrameNo, session);
+      // stop/close/reopen 后，旧的 WASM Promise 即使稍后返回也不能污染新会话。
+      if (session !== scanSession) return;
       const frameSet = new Set(candidates.map((c) => c.text));
+      candidates.forEach((candidate) => {
+        const previous = liveCandidateMeta.get(candidate.text) || {};
+        liveCandidateMeta.set(candidate.text, {
+          format: candidate.format || previous.format,
+          inGuide: !!candidate.inGuide || !!previous.inGuide,
+        });
+      });
 
       if (frameSet.size) {
         missCount = 0;
@@ -142,9 +324,15 @@ const CameraCapture = (function () {
         updateScanStatus();
         return;
       }
+      if (liveCode && !frameSet.size && missCount <= LOCKED_MISS_TOLERANCE) {
+        updateScanStatus();
+        return;
+      }
       if (liveCode) {
         // 锁定到期了，清掉过期结果，重新开始累计投票，而不是让一个过期号码悬在那
         liveCode = '';
+        voteWindow = [];
+        consecutiveHits = new Map();
       }
 
       // 每个候选独立计数：这一帧出现就 +1 连续命中，没出现就清零；滑动窗口另外
@@ -161,9 +349,11 @@ const CameraCapture = (function () {
         for (const text of frame) voteCounts.set(text, (voteCounts.get(text) || 0) + 1);
       }
 
-      const confirmedTexts = [...voteCounts.keys()].filter((text) =>
-        (voteCounts.get(text) || 0) >= VOTES_TO_CONFIRM || (consecutiveHits.get(text) || 0) >= CONSECUTIVE_TO_CONFIRM
-      );
+      const confirmedTexts = [...voteCounts.keys()]
+        .filter((text) =>
+          (voteCounts.get(text) || 0) >= VOTES_TO_CONFIRM || (consecutiveHits.get(text) || 0) >= CONSECUTIVE_TO_CONFIRM
+        )
+        .sort((a, b) => liveCandidateScore(b, voteCounts) - liveCandidateScore(a, voteCounts));
 
       if (confirmedTexts.length === 1) {
         liveCode = confirmedTexts[0];
@@ -174,17 +364,25 @@ const CameraCapture = (function () {
         // 不擅自二选一：多个候选都稳定出现，交给用户点选，避免把分拣码/路由码
         // 之类的另一个有效条码悄悄当成快递单号入库。
         updateScanStatus(confirmedTexts);
-      } else if (!frameSet.size && missCount > MISS_TOLERANCE) {
+      } else if (!frameSet.size && missCount > CANDIDATE_MISS_TOLERANCE) {
         voteWindow = [];
         consecutiveHits = new Map();
+        liveCandidateMeta = new Map();
         updateScanStatus();
       } else {
         updateScanStatus();
       }
     } catch (e) {
-      // 单帧识别失败不影响下一帧继续尝试
+      if (Date.now() - lastScanErrorAt > 5000) {
+        console.warn('实时条码识别失败，将继续重试：', e);
+        lastScanErrorAt = Date.now();
+      }
     } finally {
-      scanBusy = false;
+      if (session === scanSession && cameraDiagnostics) {
+        cameraDiagnostics.lastDecodeMs = Math.round((performance.now() - startedAt) * 10) / 10;
+        cameraDiagnostics.lastFrame = scanFrameNo;
+      }
+      if (session === scanSession) scanBusy = false;
     }
   }
 
@@ -192,11 +390,21 @@ const CameraCapture = (function () {
     stopScanLoop();
     resetScanState();
     updateScanStatus();
-    scanTimer = setInterval(scanOneFrame, SCAN_INTERVAL_MS);
+    updateScanGuidePosition();
+    const session = scanSession;
+    const runNext = async () => {
+      if (session !== scanSession || !stream || document.hidden) return;
+      await scanOneFrame(session);
+      if (session === scanSession && stream && !document.hidden) {
+        scanTimer = setTimeout(runNext, SCAN_DELAY_MS);
+      }
+    };
+    runNext();
   }
 
   function stopScanLoop() {
-    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    scanSession += 1;
+    if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; }
     scanBusy = false;
   }
 
@@ -221,6 +429,18 @@ const CameraCapture = (function () {
       });
       video.srcObject = stream;
       await video.play();
+      const track = stream.getVideoTracks()[0];
+      cameraDiagnostics = {
+        openedAt: new Date().toISOString(),
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        trackSettings: track?.getSettings?.() || {},
+        trackCapabilities: track?.getCapabilities?.() || {},
+        roi: ROI_RECT,
+      };
+      window.__barcodeCameraDiagnostics = cameraDiagnostics;
+      console.info('条码摄像头参数：', cameraDiagnostics);
+      updateScanGuidePosition();
       startScanLoop();
     } catch (e) {
       close();
@@ -234,6 +454,7 @@ const CameraCapture = (function () {
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
     const video = el('camera-video');
     if (video) video.srcObject = null;
+    cameraDiagnostics = null;
     el('camera-modal')?.classList.add('hidden');
     onCaptureCb = null;
   }
@@ -276,6 +497,7 @@ const CameraCapture = (function () {
 
   function init() {
     if (!el('camera-modal')) return;
+    ensureScanGuide();
     el('camera-modal').querySelectorAll('[data-close-camera]').forEach((b) => b.addEventListener('click', close));
     el('camera-btn-shoot')?.addEventListener('click', capture);
     // 多候选点选按钮是运行时动态插入的，用事件委托挂在 modal 上，不用每次重新绑定。
@@ -293,6 +515,8 @@ const CameraCapture = (function () {
         startScanLoop();
       }
     });
+    window.addEventListener('resize', updateScanGuidePosition);
+    el('camera-video')?.addEventListener('loadedmetadata', updateScanGuidePosition);
   }
   document.addEventListener('DOMContentLoaded', init);
 

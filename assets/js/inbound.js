@@ -165,8 +165,12 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
   let scannedText = knownText || null;
   if (trackingInput && !scannedText) {
     for (const file of list) {
-      scannedText = await BarcodeScan.decodeFile(file);
-      if (scannedText) break;
+      const courierName = document.getElementById('ib-courier')?.selectedOptions?.[0]?.textContent || '';
+      const candidates = await BarcodeScan.decodeFileCandidates(file, { courierName });
+      if (!candidates.length) continue;
+      scannedText = await BarcodeScan.chooseCandidate(candidates);
+      // 已经检测到候选时，无论用户选择还是取消，都不再用下一张图片覆盖这次决定。
+      break;
     }
   }
 

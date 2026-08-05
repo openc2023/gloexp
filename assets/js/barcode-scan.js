@@ -33,9 +33,12 @@
    过滤（长度/字符集）和多帧投票去挑出真正的单号，而不是解码器随便挑一个就停。 */
 const BarcodeScan = (function () {
   let modulePrepared = null;
+  let lastDecodeErrorAt = 0;
 
   const TRACKING_FORMATS = ['Code128', 'Code39', 'ITF', 'EAN13', 'EAN8', 'Codabar'];
   const MAX_SYMBOLS_PER_FRAME = 6;
+  const PHOTO_MAX_SIDE = 2600;
+  const PHOTO_RETRY_MAX_SIDE = 1280;
 
   // 快递单号的粗过滤：太短的（比如 6 位数字分拣码）、太长的、带非法字符的，
   // 直接排除在候选之外，不进多帧投票，减少把无关条码误当单号的概率。这是通用
@@ -63,7 +66,11 @@ const BarcodeScan = (function () {
             },
           },
         });
-      })();
+      })().catch((error) => {
+        // 网络/路径等临时问题修复后允许下一帧重新加载，而不是永久缓存 rejected Promise。
+        modulePrepared = null;
+        throw error;
+      });
     }
     return modulePrepared;
   }
@@ -71,17 +78,17 @@ const BarcodeScan = (function () {
   // 返回这一帧/这张图里所有"看起来像快递单号"的候选：校验通过 + 格式在白名单里
   // + 长度字符集像单号。可能是 0 个、1 个，也可能好几个（面单上不止一个条码时）——
   // 是否只有一个、要不要提示用户从多个候选里选，交给调用方（实时循环里做多帧投票，
-  // 静态图片 fallback 里直接取第一个）。
-  async function decodeCandidates(imageData) {
+  // 静态图片会聚合多尺度候选；只有唯一候选才自动采用，多个候选交给用户确认。
+  async function decodeCandidates(imageData, options = {}) {
     try {
       await ensureModule();
       const results = await ZXingWASM.readBarcodes(imageData, {
-        formats: TRACKING_FORMATS,
+        formats: options.formats || TRACKING_FORMATS,
         tryHarder: true,
         tryRotate: true,
         tryInvert: true,
         tryDownscale: true,
-        maxNumberOfSymbols: MAX_SYMBOLS_PER_FRAME,
+        maxNumberOfSymbols: options.maxNumberOfSymbols || MAX_SYMBOLS_PER_FRAME,
       });
       const seen = new Set();
       const candidates = [];
@@ -90,17 +97,22 @@ const BarcodeScan = (function () {
         const text = r.text.trim();
         if (!text || !isPlausibleTrackingNumber(text) || seen.has(text)) continue;
         seen.add(text);
-        candidates.push({ text, format: r.format });
+        candidates.push({ text, format: r.format, position: r.position || null });
       }
       return candidates;
     } catch (e) {
+      // 实时循环会持续调用，限频输出以免控制台被刷满，但保留真实故障线索。
+      if (Date.now() - lastDecodeErrorAt > 5000) {
+        console.warn('条形码解码失败：', e);
+        lastDecodeErrorAt = Date.now();
+      }
       return [];
     }
   }
 
   async function decodeImageData(imageData) {
     const candidates = await decodeCandidates(imageData);
-    return candidates.length ? candidates[0].text : null;
+    return candidates.length === 1 ? candidates[0].text : null;
   }
 
   function loadImage(url) {
@@ -114,11 +126,108 @@ const BarcodeScan = (function () {
 
   function imageDataFrom(img, sx, sy, sw, sh) {
     const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sw));
+    canvas.height = Math.max(1, Math.round(sh));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  function createScaledCanvas(source, maxSide) {
+    const sourceW = source.naturalWidth || source.width;
+    const sourceH = source.naturalHeight || source.height;
+    const scale = Math.min(1, maxSide / Math.max(sourceW, sourceH));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceW * scale));
+    canvas.height = Math.max(1, Math.round(sourceH * scale));
+    canvas.getContext('2d', { willReadFrequently: true }).drawImage(
+      source, 0, 0, sourceW, sourceH, 0, 0, canvas.width, canvas.height
+    );
+    return canvas;
+  }
+
+  function createCenterBarcodeCrop(source) {
+    const sourceW = source.naturalWidth || source.width;
+    const sourceH = source.naturalHeight || source.height;
+    const sx = Math.round(sourceW * 0.03);
+    const sy = Math.round(sourceH * 0.16);
+    const sw = Math.max(1, Math.round(sourceW * 0.94));
+    const sh = Math.max(1, Math.round(sourceH * 0.68));
+    const canvas = document.createElement('canvas');
     canvas.width = sw;
     canvas.height = sh;
+    canvas.getContext('2d', { willReadFrequently: true }).drawImage(
+      source, sx, sy, sw, sh, 0, 0, sw, sh
+    );
+    return canvas;
+  }
+
+  function addCandidateGroup(store, candidates, source) {
+    for (const candidate of candidates) {
+      let item = store.get(candidate.text);
+      if (!item) {
+        item = { text: candidate.text, format: candidate.format, hits: 0, sources: [] };
+        store.set(candidate.text, item);
+      }
+      // 同一次识别调用里已经去重，因此 hits 表示独立尺度/区域的重复命中数。
+      item.hits += 1;
+      item.sources.push(source);
+    }
+  }
+
+  async function collectCanvasCandidates(store, canvas, source) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-    return ctx.getImageData(0, 0, sw, sh);
+    const candidates = await decodeCandidates(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    addCandidateGroup(store, candidates, source);
+  }
+
+  async function collectTiledCandidates(store, img) {
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const cols = 3, rows = 3, overlap = 0.2;
+    const tileW = w / cols, tileH = h / rows;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = Math.max(0, col * tileW - tileW * overlap);
+        const y = Math.max(0, row * tileH - tileH * overlap);
+        const width = Math.min(w - x, tileW * (1 + overlap * 2));
+        const height = Math.min(h - y, tileH * (1 + overlap * 2));
+        const candidates = await decodeCandidates(imageDataFrom(img, x, y, width, height));
+        addCandidateGroup(store, candidates, `局部区域 ${row + 1}-${col + 1}`);
+      }
+    }
+  }
+
+  function matchesCourierRule(text, courierName) {
+    const name = String(courierName || '').toLowerCase();
+    if (!name) return false;
+    if (/(顺丰|sf)/i.test(name)) return /^SF[A-Z0-9]{10,}$/i.test(text);
+    if (/(ems|邮政|우체국)/i.test(name)) return /^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(text) || /^\d{13}$/.test(text);
+    if (/ups/i.test(name)) return /^1Z[A-Z0-9]{16}$/i.test(text);
+    if (/fedex/i.test(name)) return /^\d{12,15}$/.test(text);
+    if (/dhl/i.test(name)) return /^\d{10}$/.test(text);
+    // 其他快递公司没有足够可靠的唯一规则时不加分也不扣分，避免误杀正确单号。
+    return false;
+  }
+
+  function candidateScore(candidate, courierName) {
+    const formatScore = { Code128: 30, Code39: 22, ITF: 18, EAN13: 14, EAN8: 8, Codabar: 6 };
+    const centerHits = candidate.sources.filter((source) => source.includes('中央')).length;
+    return candidate.hits * 100 +
+      (formatScore[candidate.format] || 0) +
+      centerHits * 18 +
+      Math.min(candidate.text.length, 20) +
+      (matchesCourierRule(candidate.text, courierName) ? 120 : 0);
+  }
+
+  function sortCandidates(candidates, courierName) {
+    const formatPriority = { Code128: 0, Code39: 1, ITF: 2, EAN13: 3, EAN8: 4, Codabar: 5 };
+    candidates.forEach((candidate) => { candidate.score = candidateScore(candidate, courierName); });
+    return candidates.sort((a, b) =>
+      b.score - a.score ||
+      (formatPriority[a.format] ?? 99) - (formatPriority[b.format] ?? 99) ||
+      b.text.length - a.text.length ||
+      a.text.localeCompare(b.text)
+    );
   }
 
   // 3x3 网格切块，格子间留 20% 重叠，避免条码正好卡在切割线上被拦腰切断。
@@ -152,8 +261,8 @@ const BarcodeScan = (function () {
   // 局部离群像素抹掉，同时尽量保留条码黑白边缘的清晰度。
   function medianDenoise(img, radius = 1) {
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -188,36 +297,97 @@ const BarcodeScan = (function () {
     return canvas;
   }
 
-  async function decodeFile(file) {
-    if (!file || !file.type || !file.type.startsWith('image/')) return null;
+  async function decodeFileCandidates(file, options = {}) {
+    if (!file || !file.type || !file.type.startsWith('image/')) return [];
     const url = URL.createObjectURL(file);
     try {
       const img = await loadImage(url).catch(() => null);
-      if (!img || !img.naturalWidth) return null;
+      if (!img || !img.naturalWidth) return [];
 
-      const direct = await decodeImageData(imageDataFrom(img, 0, 0, img.naturalWidth, img.naturalHeight));
-      if (direct) return direct;
+      // 手机原图可能达到 12MP～48MP；直接生成多份全尺寸 ImageData 会让移动浏览器
+      // 卡死或触发 WASM 内存不足。与高成功率测试页一致，先限制工作图最长边。
+      const workingCanvas = createScaledCanvas(img, PHOTO_MAX_SIDE);
+      const retryCanvas = createScaledCanvas(workingCanvas, PHOTO_RETRY_MAX_SIDE);
+      const cropCanvas = createCenterBarcodeCrop(workingCanvas);
+      const cropRetryCanvas = createScaledCanvas(cropCanvas, PHOTO_RETRY_MAX_SIDE);
+      const found = new Map();
 
-      // 门槛比较宽松：只要不是明显很小的缩略图（3x3 切完每块还有点分辨率可用）
-      // 就值得试一次切块，切块本身也不贵。
-      const big = img.naturalWidth * img.naturalHeight >= 700 * 700;
-      if (big) {
-        const tiled = await decodeTiled(img);
-        if (tiled) return tiled;
+      // 与测试页一致：完整高分辨率、1280、中央区域、中央区域1280四级确认。
+      await collectCanvasCandidates(found, workingCanvas, '完整照片');
+      await collectCanvasCandidates(found, retryCanvas, '完整照片 1280');
+      await collectCanvasCandidates(found, cropCanvas, '中央区域');
+      await collectCanvasCandidates(found, cropRetryCanvas, '中央区域 1280');
+
+      // 四种常规尝试均没有结果时才运行较贵的分块和去噪，不拖慢正常扫码。
+      const big = workingCanvas.width * workingCanvas.height >= 700 * 700;
+      if (!found.size && big) await collectTiledCandidates(found, workingCanvas);
+
+      if (!found.size) {
+        const denoisedCanvas = medianDenoise(workingCanvas);
+        await collectCanvasCandidates(found, denoisedCanvas, '去噪照片');
+        if (!found.size && big) await collectTiledCandidates(found, denoisedCanvas);
       }
-
-      // 最后一级：去噪后再试一遍整图直接解码 + 切块（大图才切块，小图没意义）
-      const denoisedCanvas = medianDenoise(img);
-      const denoisedCtx = denoisedCanvas.getContext('2d', { willReadFrequently: true });
-      const denoisedData = denoisedCtx.getImageData(0, 0, denoisedCanvas.width, denoisedCanvas.height);
-      const denoisedText = await decodeImageData(denoisedData);
-      if (denoisedText) return denoisedText;
-      if (big) return await decodeTiled(denoisedCanvas);
-      return null;
+      return sortCandidates([...found.values()], options.courierName);
     } finally {
       URL.revokeObjectURL(url);
     }
   }
 
-  return { decodeFile, decodeImageData, decodeCandidates };
+  // 兼容旧调用：只有唯一候选才自动返回；多个候选绝不再静默取 results[0]。
+  async function decodeFile(file) {
+    const candidates = await decodeFileCandidates(file);
+    return candidates.length === 1 ? candidates[0].text : null;
+  }
+
+  function chooseCandidate(candidates, title = '请选择快递单号') {
+    const unique = [...new Map((candidates || []).map((item) => {
+      const candidate = typeof item === 'string' ? { text: item } : item;
+      return [candidate.text, candidate];
+    })).values()].filter((item) => item?.text);
+    if (!unique.length) return Promise.resolve(null);
+    if (unique.length === 1) return Promise.resolve(unique[0].text);
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0 z-[95] flex items-center justify-center p-4 bg-gray-900/75';
+      const panel = document.createElement('div');
+      panel.className = 'w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 shadow-xl p-5';
+      const heading = document.createElement('h3');
+      heading.className = 'text-base font-semibold text-gray-800 dark:text-gray-100';
+      heading.textContent = title;
+      const hint = document.createElement('p');
+      hint.className = 'mt-1 mb-4 text-xs text-gray-500 dark:text-gray-400';
+      hint.textContent = `检测到 ${unique.length} 个有效条码，系统无法安全自动判断，请点选正确单号。`;
+      const choices = document.createElement('div');
+      choices.className = 'space-y-2';
+
+      const finish = (value) => { overlay.remove(); resolve(value); };
+      for (const candidate of unique) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'w-full px-4 py-3 text-left rounded-md border border-purple-200 dark:border-purple-500/40 hover:bg-purple-50 dark:hover:bg-purple-500/10';
+        const code = document.createElement('span');
+        code.className = 'block font-semibold text-gray-800 dark:text-gray-100 break-all';
+        code.textContent = candidate.text;
+        const meta = document.createElement('span');
+        meta.className = 'block mt-1 text-xs text-gray-500 dark:text-gray-400';
+        meta.textContent = `${candidate.format || '条形码'}${candidate.hits ? ` · 多尺度命中 ${candidate.hits} 次` : ''}`;
+        button.append(code, meta);
+        button.addEventListener('click', () => finish(candidate.text));
+        choices.appendChild(button);
+      }
+
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'mt-4 w-full px-3 py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400';
+      cancel.textContent = '取消，稍后手动输入';
+      cancel.addEventListener('click', () => finish(null));
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(null); });
+      panel.append(heading, hint, choices, cancel);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  return { decodeFile, decodeFileCandidates, chooseCandidate, decodeImageData, decodeCandidates };
 })();
