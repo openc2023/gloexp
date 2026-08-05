@@ -97,15 +97,53 @@ function rcopy(string $src, string $dst): void {
     }
 }
 
+// 只保留最近几份备份，多的自动清掉——不然 data/backups/ 会随着更新次数无限膨胀。
+define('BACKUP_RETENTION', 3);
+
+function prune_old_backups(): void {
+    if (!is_dir(BACKUP_DIR)) return;
+    $items = [];
+    foreach (scandir(BACKUP_DIR) as $item) {
+        if ($item === '.' || $item === '..') continue;
+        $path = BACKUP_DIR . '/' . $item;
+        if (is_dir($path)) $items[] = ['path' => $path, 'time' => filemtime($path)];
+    }
+    usort($items, fn($a, $b) => $b['time'] <=> $a['time']);
+    foreach (array_slice($items, BACKUP_RETENTION) as $old) {
+        rrmdir($old['path']);
+    }
+}
+
 function backup_current(): string {
-    if (!is_dir(BACKUP_DIR)) mkdir(BACKUP_DIR, 0755, true);
+    // mkdir/copy 失败时 PHP 只会抛 Warning，不是 Exception——之前这里完全没检查
+    // 返回值，一旦服务器上 data/backups/ 权限或磁盘空间有问题，会静默跳过整个备份
+    // 步骤，但后面的更新流程完全不知情，照样往下走、照样提示"更新成功"，只是
+    // 这次更新压根没留下可回滚的备份。这正是"点更新、提示成功，但备份数量
+    // 一直不变"这个问题的真正原因——不是数量被清理掉了，是新的备份从来没建成功过。
+    // 现在把每一步都校验一遍，建不出来就直接抛异常，让更新老实报错，而不是
+    // 假装成功。
+    if (!is_dir(BACKUP_DIR) && !mkdir(BACKUP_DIR, 0755, true) && !is_dir(BACKUP_DIR)) {
+        throw new Exception('无法创建备份目录，请检查服务器写入权限：' . BACKUP_DIR);
+    }
     $name = 'backup_' . date('Ymd_His') . '_' . substr(get_local_version() ?: 'unknown', 0, 8);
     $path = BACKUP_DIR . '/' . $name;
-    mkdir($path, 0755, true);
+    if (!mkdir($path, 0755, true) && !is_dir($path)) {
+        throw new Exception('无法创建本次备份目录，请检查服务器写入权限：' . $path);
+    }
     foreach (DEPLOY_PATHS as $p) {
         $src = __DIR__ . '/../' . $p;
         if (file_exists($src)) rcopy($src, $path . '/' . $p);
     }
+    // rcopy 内部同样不检查 copy() 的返回值，这里再校验一遍每个应该存在的路径
+    // 是不是真的拷过去了，漏了就说明磁盘空间/权限出了问题，备份不完整不能算数。
+    foreach (DEPLOY_PATHS as $p) {
+        $src = __DIR__ . '/../' . $p;
+        if (file_exists($src) && !file_exists($path . '/' . $p)) {
+            rrmdir($path);
+            throw new Exception("备份不完整，缺少 {$p}，可能是磁盘空间不足或写入权限问题");
+        }
+    }
+    prune_old_backups();
     return $name;
 }
 
