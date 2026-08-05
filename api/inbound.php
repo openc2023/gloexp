@@ -20,6 +20,35 @@ require_once __DIR__ . '/parcels.php'; // 复用 parse_express_text / resolve_ma
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $user   = require_auth();
 
+function inbound_tracking_duplicate(string $tracking, int $excludeId = 0): ?array {
+    $tracking = trim($tracking);
+    if ($tracking === '') return null;
+    $sql = "SELECT p.id, p.tracking_number, p.status, c.name AS courier_name
+            FROM parcels p
+            LEFT JOIN couriers c ON c.id = p.courier_id AND c.deleted_at IS NULL
+            WHERE p.deleted_at IS NULL
+              AND TRIM(p.tracking_number) <> ''
+              AND UPPER(TRIM(p.tracking_number)) = UPPER(?)";
+    $params = [$tracking];
+    if ($excludeId > 0) {
+        $sql .= " AND p.id <> ?";
+        $params[] = $excludeId;
+    }
+    $sql .= " ORDER BY p.id ASC LIMIT 1";
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+if ($action === 'check_tracking') {
+    require_can($user, 'inbound', 'create');
+    $tracking = trim((string)($_GET['tracking'] ?? ''));
+    if ($tracking === '') json_out(['ok' => false, 'msg' => '快递单号不能为空']);
+    $duplicate = inbound_tracking_duplicate($tracking, (int)($_GET['exclude_id'] ?? 0));
+    json_out(['ok' => true, 'exists' => $duplicate !== null, 'data' => $duplicate]);
+}
+
 // 负责人指派范围校验：与 outbound.php 的 manager_allowed_in_outbound_scope 同一套逻辑，
 // 复用 data_scopes.inbound（仅自己/本团队/全部），非管理员默认只能把入库单指派给自己。
 function manager_allowed_in_inbound_scope(array $user, ?int $managerId): bool {
@@ -118,6 +147,10 @@ if ($action === 'create') {
     $body = json_decode(file_get_contents('php://input'), true) ?? [];
     $name = trim($body['name'] ?? '');
     if (!$name) json_out(['ok' => false, 'msg' => '姓名必填']);
+    $tracking = trim((string)($body['tracking_number'] ?? ''));
+    if ($tracking !== '' && ($duplicate = inbound_tracking_duplicate($tracking))) {
+        json_out(['ok' => false, 'msg' => '这个快递单号已经录入', 'duplicate' => $duplicate], 409);
+    }
 
     require_inbound_manager_assignment($user, $body);
     $managerId = !empty($body['manager_id']) ? (int)$body['manager_id'] : null;
@@ -142,7 +175,7 @@ if ($action === 'create') {
         trim($body['category']     ?? 'cn'),
         ($body['courier_id'] ?? '') ?: null,
         trim($body['service_type'] ?? '普通'),
-        trim($body['tracking_number'] ?? ''),
+        $tracking,
         trim($body['address']      ?? ''),
         trim($body['note']         ?? ''),
         trim($body['internal_note'] ?? ''),

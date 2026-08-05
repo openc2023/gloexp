@@ -107,6 +107,22 @@ function removeImage(targetArr, previewEl, idx) {
   if (removedPath) OB.pendingImageDeletes.push(removedPath);
 }
 
+function duplicateTrackingMessage(tracking, duplicate) {
+  const courier = duplicate?.courier_name || '未指定快递公司';
+  return `单号 ${tracking} 已经录入（${courier}），请勿重复录入`;
+}
+
+async function checkOutboundTrackingDuplicate(tracking, excludeId) {
+  try {
+    return await Api.api('outbound', 'check_tracking', {
+      params: { tracking, exclude_id: excludeId || 0 },
+    });
+  } catch (e) {
+    toast('暂时无法校验单号是否重复，请稍后重试', 'err');
+    return { blocked: true };
+  }
+}
+
 // 选图/拖拽/拍照统一走这一个函数：上传图片的同时，顺手在本地识别一下面单条形码。
 // 新上传的图片是明确的"重新扫一下"动作，所以识别到就直接填（覆盖旧单号也一样），
 // 不因为单号框里已经有内容就跳过识别——只是覆盖时提示一下原来的值，方便发现认错。
@@ -133,6 +149,16 @@ async function handleImageFiles(files, targetArr, previewEl, trackingElId, known
   }
   renderImagePreview(previewEl, targetArr, (idx) => removeImage(targetArr, previewEl, idx));
   updateImagesHint(targetArr.length);
+
+  if (scannedText && trackingInput) {
+    const excludeId = document.getElementById('fl-id')?.value || 0;
+    const duplicateCheck = await checkOutboundTrackingDuplicate(scannedText.trim().toUpperCase(), excludeId);
+    if (duplicateCheck.blocked) scannedText = null;
+    if (duplicateCheck.exists) {
+      toast(duplicateTrackingMessage(scannedText, duplicateCheck.data), 'err', 5200);
+      scannedText = null;
+    }
+  }
 
   if (scannedText && trackingInput) {
     const prev = trackingInput.value.trim();
@@ -303,7 +329,6 @@ function trackingCellHtml(r) {
 
 function openTrackingInlineEdit(id) {
   const row = getRow(id);
-  const courierName = row?.courier_name || getCourierForRow(row)?.name || '';
   const cell = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`);
   if (!row || !cell) return;
   cell.innerHTML = `
@@ -356,6 +381,7 @@ async function processRowScanFile(file, knownText) {
   if (!id || !file || !file.type || !file.type.startsWith('image/')) return;
 
   const row = getRow(id);
+  const courierName = row?.courier_name || getCourierForRow(row)?.name || '';
   // knownText：拍照弹窗实时识别循环已经连续确认过的号码，不用再重新解码一遍。
   const [text, uploadedPath] = await Promise.all([
     knownText
@@ -363,6 +389,19 @@ async function processRowScanFile(file, knownText) {
       : BarcodeScan.decodeFileCandidates(file, { courierName }).then((candidates) => BarcodeScan.chooseCandidate(candidates)),
     Api.uploadFile(file).catch(() => null),
   ]);
+
+  // 快捷扫码若命中已录入单号，不把这次临时照片挂到错误/重复记录上。
+  if (text) {
+    const normalizedText = text.trim().toUpperCase();
+    const duplicateCheck = await checkOutboundTrackingDuplicate(normalizedText, id);
+    if (duplicateCheck.blocked || duplicateCheck.exists) {
+      if (uploadedPath) Api.deleteUploadedFile(uploadedPath);
+      if (duplicateCheck.exists) {
+        toast(duplicateTrackingMessage(normalizedText, duplicateCheck.data), 'err', 5200);
+      }
+      return;
+    }
+  }
 
   if (uploadedPath && row) {
     const images = [...(row.images || []), uploadedPath];
@@ -374,28 +413,29 @@ async function processRowScanFile(file, knownText) {
   }
 
   if (!text) { toast('未识别到条形码，换一张更清晰的图片，或手动输入', 'err'); return; }
-  openTrackingInlineEdit(id);
-  const inp = document.getElementById(`tracking-inline-input-${id}`);
-  if (inp) { inp.value = text.trim().toUpperCase(); inp.focus(); }
+  await saveTrackingValue(id, text.trim().toUpperCase(), { fromScan: true, skipDuplicateCheck: true });
 }
 
-async function saveTrackingInline(id) {
-  const input = document.getElementById(`tracking-inline-input-${id}`);
+async function saveTrackingValue(id, rawValue, { input = null, fromScan = false, skipDuplicateCheck = false } = {}) {
   const row = getRow(id);
-  if (!input || !row) return;
-  const value = input.value.trim();
+  if (!row) return false;
+  const value = String(rawValue || '').trim().toUpperCase();
 
   if (value && (value.length < 4 || value.length > 40)) {
     toast('快递单号长度需为 4-40 字符', 'err');
-    return;
+    return false;
   }
-  if (value) {
-    const dup = OB.rows.find((x) => String(x.id) !== String(id) && x.tracking_number && x.tracking_number.toUpperCase() === value.toUpperCase());
-    if (dup) { toast('当前页已存在相同快递单号，请核对', 'err'); return; }
+  if (value && !skipDuplicateCheck) {
+    const duplicateCheck = await checkOutboundTrackingDuplicate(value, id);
+    if (duplicateCheck.blocked) return false;
+    if (duplicateCheck.exists) {
+      toast(duplicateTrackingMessage(value, duplicateCheck.data), 'err', 5200);
+      return false;
+    }
   }
   if (!value && row.status === 'shipped') {
     toast('已邮寄状态下不能清空快递单号，请先修改状态', 'err');
-    return;
+    return false;
   }
 
   const body = { tracking_number: value };
@@ -404,10 +444,19 @@ async function saveTrackingInline(id) {
 
   try {
     await Api.api('outbound', 'update', { method: 'POST', params: { id }, body });
-    toast(autoShip ? '已保存，并自动切换为已邮寄' : '单号已更新', 'ok');
-    input.blur(); // 见 cancelTrackingInlineEdit 里的说明：先失焦再刷新列表，避免手机上跳动
+    toast(fromScan
+      ? (autoShip ? '扫码单号已自动保存，并切换为已邮寄' : '扫码单号已自动保存')
+      : (autoShip ? '已保存，并自动切换为已邮寄' : '单号已更新'), 'ok');
+    input?.blur(); // 先失焦再刷新列表，避免手机上跳动
     loadOutboundList();
-  } catch (e) { /* toast shown */ }
+    return true;
+  } catch (e) { return false; /* toast shown */ }
+}
+
+async function saveTrackingInline(id) {
+  const input = document.getElementById(`tracking-inline-input-${id}`);
+  if (!input) return;
+  await saveTrackingValue(id, input.value, { input });
 }
 
 // ── 行选择（导出用）────────────────────────────────────────
@@ -653,8 +702,12 @@ async function submitFill(e) {
   if (status === 'shipped') {
     if (!tracking) { toast('已邮寄状态需要填写快递单号', 'err'); return; }
     if (tracking.length < 4 || tracking.length > 40) { toast('快递单号长度需为 4-40 字符', 'err'); return; }
-    const dup = OB.rows.find((x) => String(x.id) !== String(id) && x.tracking_number && x.tracking_number.toUpperCase() === tracking.toUpperCase());
-    if (dup) { toast('当前页已存在相同快递单号，请核对', 'err'); return; }
+    const duplicateCheck = await checkOutboundTrackingDuplicate(tracking.toUpperCase(), id);
+    if (duplicateCheck.blocked) return;
+    if (duplicateCheck.exists) {
+      toast(duplicateTrackingMessage(tracking, duplicateCheck.data), 'err', 5200);
+      return;
+    }
   }
 
   const original = getRow(id);
@@ -846,9 +899,10 @@ async function initOutbound() {
     e.target.value = '';
   });
   document.getElementById('fl-btn-camera').addEventListener('click', () => {
+    const courierName = document.getElementById('fl-courier')?.selectedOptions?.[0]?.textContent || '';
     CameraCapture.open((file, recognizedText) => {
       if (file) handleImageFiles([file], OB.fillImages, document.getElementById('fl-images-preview'), 'fl-tracking', recognizedText);
-    });
+    }, { mode: 'image-upload', title: '拍摄面单 / 包裹图片', courierName });
   });
   const flDropzone = document.getElementById('fl-images-dropzone');
   flDropzone.addEventListener('click', () => document.getElementById('fl-images-input').click());
@@ -878,7 +932,19 @@ async function initOutbound() {
   document.getElementById('row-scan-btn-camera').addEventListener('click', () => {
     // 只隐藏面板，不清空 ROW_SCAN_ID——摄像头拍完之后 processRowScanFile 还要用它
     document.getElementById('row-scan-modal').classList.add('hidden');
-    CameraCapture.open((file, recognizedText) => processRowScanFile(file, recognizedText));
+    const row = getRow(ROW_SCAN_ID);
+    const courierName = row?.courier_name || getCourierForRow(row)?.name || '';
+    CameraCapture.open(
+      (file, recognizedText) => processRowScanFile(file, recognizedText),
+      {
+        mode: 'row-tracking-scan',
+        title: '扫码识别单号',
+        courierName,
+        onCancel: () => {
+          if (ROW_SCAN_ID) document.getElementById('row-scan-modal').classList.remove('hidden');
+        },
+      }
+    );
   });
   document.querySelectorAll('[data-close-row-scan]').forEach((el) => el.addEventListener('click', closeRowScanModal));
 

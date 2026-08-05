@@ -34,7 +34,8 @@ const CameraCapture = (function () {
   const FALLBACK_EVERY = 3;
   const PRIMARY_FORMATS = ['Code128'];
   const FALLBACK_FORMATS = ['Code39', 'ITF', 'EAN13', 'EAN8', 'Codabar'];
-  const ROI_RECT = Object.freeze({ x: 0.05, y: 0.325, width: 0.9, height: 0.35 });
+  // 与高准确率测试页的视觉范围一致：宽 90%、高 64%，不同横竖屏按原始视频比例换算。
+  const ROI_RECT = Object.freeze({ x: 0.05, y: 0.18, width: 0.9, height: 0.64 });
 
   let scanTimer = null;
   let scanBusy = false;
@@ -52,6 +53,7 @@ const CameraCapture = (function () {
   let lastScanErrorAt = 0;
   let cameraDiagnostics = null;
   let liveCandidateMeta = new Map();
+  let activeContext = {};
 
   function el(id) { return document.getElementById(id); }
 
@@ -59,12 +61,22 @@ const CameraCapture = (function () {
     return window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
   }
 
-  function fallbackFilePick(onCapture) {
+  function fallbackFilePick(onCapture, onCancel) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     input.capture = 'environment';
-    input.addEventListener('change', () => onCapture(input.files[0] || null));
+    let settled = false;
+    input.addEventListener('change', () => {
+      settled = true;
+      onCapture(input.files[0] || null);
+    });
+    // 取消系统相机/相册通常不会触发 change；回到页面后恢复原入口。
+    window.addEventListener('focus', () => {
+      setTimeout(() => {
+        if (!settled) { settled = true; onCancel?.(); }
+      }, 350);
+    }, { once: true });
     input.click();
   }
 
@@ -78,7 +90,9 @@ const CameraCapture = (function () {
     scanChoicesEl = document.createElement('div');
     scanChoicesEl.id = 'camera-scan-choices';
     scanChoicesEl.className = 'mt-2 flex flex-wrap gap-2 justify-center hidden';
-    video.insertAdjacentElement('afterend', scanStatusEl);
+    // 状态和候选放在画面包装层外，避免被扫码遮罩或 overflow 裁掉。
+    const anchor = el('camera-scan-stage') || video;
+    anchor.insertAdjacentElement('afterend', scanStatusEl);
     scanStatusEl.insertAdjacentElement('afterend', scanChoicesEl);
     return scanStatusEl;
   }
@@ -184,7 +198,7 @@ const CameraCapture = (function () {
       statusEl.textContent = `识别中…看到号码 ${top[0]}`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400';
     } else {
-      statusEl.textContent = '请把条形码对准镜头，会自动识别';
+      statusEl.textContent = '请把条形码放入扫码框内，会自动识别';
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300';
     }
   }
@@ -246,28 +260,42 @@ const CameraCapture = (function () {
     );
 
     // 主链路完全对齐测试页：每轮先用 1280 全画面只识别 Code128。
-    let candidates = await timedDecode(fullImage, {
+    const candidates = await timedDecode(fullImage, {
       formats: PRIMARY_FORMATS,
       maxNumberOfSymbols: 12,
     }, 'Code128 全画面 1280');
     if (session !== scanSession) return [];
 
+    const positionedPrimary = candidates.map((candidate) => ({
+      ...candidate,
+      inGuide: isPositionInGuide(candidate.position, fullImage.width, fullImage.height),
+    }));
+    const primaryInGuide = positionedPrimary.filter((candidate) => candidate.inGuide);
+    if (primaryInGuide.length) return primaryInGuide;
+
+    const allowFullFrameFallback = missCount >= FALLBACK_AFTER_MISSES && frameNo % FALLBACK_EVERY === 0;
+    // 框外 Code128 不能抢占框内结果；连续失败后才作为低频全画面兜底。
+    if (positionedPrimary.length && allowFullFrameFallback) return positionedPrimary;
+
     // 连续若干轮没有 Code128 后才低频尝试其他一维格式，避免每轮扩大搜索空间。
-    if (!candidates.length && missCount >= FALLBACK_AFTER_MISSES && frameNo % FALLBACK_EVERY === 0) {
-      candidates = await timedDecode(fullImage, {
+    if (!positionedPrimary.length && allowFullFrameFallback) {
+      const fallbackCandidates = await timedDecode(fullImage, {
         formats: FALLBACK_FORMATS,
         maxNumberOfSymbols: 6,
       }, '其他一维码低频兜底');
       if (session !== scanSession) return [];
+      const positionedFallback = fallbackCandidates.map((candidate) => ({
+        ...candidate,
+        inGuide: isPositionInGuide(candidate.position, fullImage.width, fullImage.height),
+      }));
+      const fallbackInGuide = positionedFallback.filter((candidate) => candidate.inGuide);
+      return fallbackInGuide.length ? fallbackInGuide : positionedFallback;
     }
-
-    return candidates.map((candidate) => ({
-      ...candidate,
-      inGuide: isPositionInGuide(candidate.position, fullImage.width, fullImage.height),
-    }));
+    return [];
   }
 
   function selectedCourierName() {
+    if (activeContext.courierName) return activeContext.courierName;
     const select = el('ib-courier') || el('fl-courier');
     return select?.selectedOptions?.[0]?.textContent || '';
   }
@@ -408,14 +436,17 @@ const CameraCapture = (function () {
     scanBusy = false;
   }
 
-  async function open(onCapture) {
+  async function open(onCapture, options = {}) {
+    activeContext = { ...options };
     if (!canUseLiveCamera()) {
-      fallbackFilePick(onCapture);
+      fallbackFilePick(onCapture, options.onCancel);
       return;
     }
     const modal = el('camera-modal');
-    if (!modal) { fallbackFilePick(onCapture); return; }
+    if (!modal) { fallbackFilePick(onCapture, options.onCancel); return; }
     onCaptureCb = onCapture;
+    const title = modal.querySelector('h3');
+    if (title) title.textContent = options.title || '拍照上传';
     modal.classList.remove('hidden');
     const video = el('camera-video');
     try {
@@ -432,6 +463,8 @@ const CameraCapture = (function () {
       const track = stream.getVideoTracks()[0];
       cameraDiagnostics = {
         openedAt: new Date().toISOString(),
+        mode: activeContext.mode || 'image-upload',
+        courierName: activeContext.courierName || '',
         videoWidth: video.videoWidth,
         videoHeight: video.videoHeight,
         trackSettings: track?.getSettings?.() || {},
@@ -443,12 +476,13 @@ const CameraCapture = (function () {
       updateScanGuidePosition();
       startScanLoop();
     } catch (e) {
-      close();
-      fallbackFilePick(onCapture);
+      close(false);
+      fallbackFilePick(onCapture, options.onCancel);
     }
   }
 
-  function close() {
+  function close(notifyCancel = false) {
+    const onCancel = activeContext.onCancel;
     stopScanLoop();
     resetScanState();
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
@@ -457,6 +491,8 @@ const CameraCapture = (function () {
     cameraDiagnostics = null;
     el('camera-modal')?.classList.add('hidden');
     onCaptureCb = null;
+    activeContext = {};
+    if (notifyCancel) onCancel?.();
   }
 
   function capture() {
@@ -490,7 +526,7 @@ const CameraCapture = (function () {
       }
       const file = new File([blob], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       const cb = onCaptureCb;
-      close();
+      close(false);
       if (cb) cb(file, recognizedText);
     }, 'image/jpeg', 0.92);
   }
@@ -498,7 +534,7 @@ const CameraCapture = (function () {
   function init() {
     if (!el('camera-modal')) return;
     ensureScanGuide();
-    el('camera-modal').querySelectorAll('[data-close-camera]').forEach((b) => b.addEventListener('click', close));
+    el('camera-modal').querySelectorAll('[data-close-camera]').forEach((b) => b.addEventListener('click', () => close(true)));
     el('camera-btn-shoot')?.addEventListener('click', capture);
     // 多候选点选按钮是运行时动态插入的，用事件委托挂在 modal 上，不用每次重新绑定。
     el('camera-modal').addEventListener('click', (e) => {

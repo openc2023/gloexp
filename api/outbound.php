@@ -69,6 +69,35 @@ function require_outbound_manager_assignment(array $user, array $body): void {
     }
 }
 
+function outbound_tracking_duplicate(string $tracking, int $excludeId = 0): ?array {
+    $tracking = trim($tracking);
+    if ($tracking === '') return null;
+    $sql = "SELECT p.id, p.tracking_number, p.status, c.name AS courier_name
+            FROM parcels p
+            LEFT JOIN couriers c ON c.id = p.courier_id AND c.deleted_at IS NULL
+            WHERE p.deleted_at IS NULL
+              AND TRIM(p.tracking_number) <> ''
+              AND UPPER(TRIM(p.tracking_number)) = UPPER(?)";
+    $params = [$tracking];
+    if ($excludeId > 0) {
+        $sql .= " AND p.id <> ?";
+        $params[] = $excludeId;
+    }
+    $sql .= " ORDER BY p.id ASC LIMIT 1";
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+if ($action === 'check_tracking') {
+    require_can($user, 'parcels', 'edit');
+    $tracking = trim((string)($_GET['tracking'] ?? ''));
+    if ($tracking === '') json_out(['ok' => false, 'msg' => '快递单号不能为空']);
+    $duplicate = outbound_tracking_duplicate($tracking, (int)($_GET['exclude_id'] ?? 0));
+    json_out(['ok' => true, 'exists' => $duplicate !== null, 'data' => $duplicate]);
+}
+
 // ── 列表（待邮寄 + 已邮寄）───────────────────────────────────
 if ($action === 'list') {
     require_can($user, 'parcels', 'view');
@@ -139,6 +168,9 @@ if ($action === 'fill') {
     $name = trim((string)($body['name'] ?? ''));
     if ($name === '') json_out(['ok' => false, 'msg' => '客户姓名不能为空']);
     if (!$tracking) json_out(['ok' => false, 'msg' => '快递单号不能为空']);
+    if ($duplicate = outbound_tracking_duplicate($tracking, $id)) {
+        json_out(['ok' => false, 'msg' => '这个快递单号已经录入', 'duplicate' => $duplicate], 409);
+    }
 
     $phone = trim((string)($body['phone'] ?? ''));
     $managerId = !empty($body['manager_id']) ? (int)$body['manager_id'] : null;
@@ -213,6 +245,12 @@ if ($action === 'update') {
     }
     if (array_key_exists('name', $body) && trim((string)$body['name']) === '') {
         json_out(['ok' => false, 'msg' => '客户姓名不能为空']);
+    }
+    if (array_key_exists('tracking_number', $body)) {
+        $newTracking = trim((string)$body['tracking_number']);
+        if ($newTracking !== '' && ($duplicate = outbound_tracking_duplicate($newTracking, $id))) {
+            json_out(['ok' => false, 'msg' => '这个快递单号已经录入', 'duplicate' => $duplicate], 409);
+        }
     }
 
     $fields = [];
