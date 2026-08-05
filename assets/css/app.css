@@ -22,6 +22,17 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
+/* tailwind.output.css 是提前用独立 npm 脚本编译好、静态复制进来的文件，不是实时扫描
+   HTML/JS 生成——Tailwind 的任意值方括号写法（z-[N]）从来没被这次编译扫描到，导致这几个
+   弹窗的 z-index 全部悄悄退化成默认的 auto，层级完全乱套：比如"请选择快递单号"候选框
+   （chooseCandidate，本该是全站最高层）实际会被压在填单号弹窗（z-50，是标准刻度类，
+   编译进去了）下面，得先关掉填单号弹窗才看得见。这里手写补上实际用到的几个，
+   跟 HTML/JS 里的类名一一对应，不依赖 Tailwind 编译产物。 */
+.z-\[65\] { z-index: 65; }
+.z-\[70\] { z-index: 70; }
+.z-\[80\] { z-index: 80; }
+.z-\[95\] { z-index: 95; }
+
 /* 移动端应用外壳：顶部导航始终固定在可视区域顶部。
    使用动态视口和安全区，避免地址栏伸缩、软键盘、刘海/灵动岛导致顶栏被推走或遮住。 */
 #app {
