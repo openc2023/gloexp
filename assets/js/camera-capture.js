@@ -12,7 +12,7 @@ const CameraCapture = (function () {
   // 拍出来的照片存到面单图片、条码识别也从这张图上做——太大的画布在部分手机浏览器上
   // toBlob 会失败或产出损坏文件（这也是"拍的照片打不开"的常见原因），这里封顶到一个
   // 既够清楚辨认条码、又不容易触发手机内存问题的尺寸。
-  const CAPTURE_MAX_DIM = 2400;
+  const CAPTURE_MAX_DIM = 2600;
 
   // 摄像头预览时后台跑一个轻量实时识别循环，让用户在按下拍摄之前就能看到"识别到了
   // 没有"，不用盲拍。实时主链路对齐已经验证效果很好的测试页：Code128、1280 全画面、
@@ -53,6 +53,7 @@ const CameraCapture = (function () {
   let lastScanErrorAt = 0;
   let cameraDiagnostics = null;
   let liveCandidateMeta = new Map();
+  let liveVoteCounts = new Map();
   let activeContext = {};
   let captureBusy = false;
 
@@ -93,7 +94,7 @@ const CameraCapture = (function () {
     Object.assign(scanStatusEl.style, {
       position: 'absolute',
       left: '50%',
-      bottom: '12px',
+      top: '12px',
       transform: 'translateX(-50%)',
       width: 'min(92%, 580px)',
       zIndex: '6',
@@ -102,7 +103,7 @@ const CameraCapture = (function () {
     scanChoicesEl = document.createElement('div');
     scanChoicesEl.id = 'camera-scan-choices';
     scanChoicesEl.className = 'mt-2 flex flex-wrap gap-2 justify-center hidden';
-    // 主状态固定覆盖在画面底部，手机上不会被高视频挤到屏幕外；候选按钮仍放在画面外。
+    // 主状态固定覆盖在画面顶部，手机上始终可见；候选按钮仍放在画面外。
     const stage = el('camera-scan-stage');
     if (stage) {
       stage.appendChild(scanStatusEl);
@@ -164,6 +165,21 @@ const CameraCapture = (function () {
       boxShadow: '0 0 0 9999px rgba(0,0,0,.30)',
       transition: 'border-color .18s, box-shadow .18s',
     });
+    const scanLine = document.createElement('div');
+    Object.assign(scanLine.style, {
+      position: 'absolute',
+      left: '2%',
+      right: '2%',
+      top: '8%',
+      height: '2px',
+      background: 'linear-gradient(90deg, transparent, #34d399, transparent)',
+      boxShadow: '0 0 8px rgba(52,211,153,.9)',
+    });
+    scanGuideEl.appendChild(scanLine);
+    scanLine.animate?.(
+      [{ top: '8%', opacity: 0.55 }, { top: '91%', opacity: 1 }, { top: '8%', opacity: 0.55 }],
+      { duration: 2200, iterations: Infinity, easing: 'ease-in-out' }
+    );
     stage.appendChild(scanGuideEl);
     updateScanGuidePosition();
     return scanGuideEl;
@@ -207,6 +223,7 @@ const CameraCapture = (function () {
     lockedUntil = 0;
     scanFrameNo = 0;
     liveCandidateMeta = new Map();
+    liveVoteCounts = new Map();
     setScanGuideReady(false);
     if (scanChoicesEl) { scanChoicesEl.innerHTML = ''; scanChoicesEl.classList.add('hidden'); }
   }
@@ -229,6 +246,8 @@ const CameraCapture = (function () {
     if (ambiguous && ambiguous.length > 1 && !confirmed) {
       statusEl.textContent = `检测到 ${ambiguous.length} 个不同的有效条码，请点选快递单号：`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      statusEl.style.backgroundColor = '#d97706';
+      statusEl.style.color = '#fff';
       scanChoicesEl.innerHTML = ambiguous.map((t) => `<button type="button" data-scan-choice="${t}" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white dark:bg-gray-700 border border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10">${t}</button>`).join('');
       scanChoicesEl.classList.remove('hidden');
       return;
@@ -238,13 +257,25 @@ const CameraCapture = (function () {
     if (confirmed) {
       statusEl.textContent = `已识别：${liveCode}，可以拍照`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
-    } else if ([...consecutiveHits.values()].some((count) => count > 0)) {
-      const top = [...consecutiveHits.entries()].filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])[0];
-      statusEl.textContent = `识别中…看到号码 ${top[0]}`;
+      statusEl.style.backgroundColor = '#059669';
+      statusEl.style.color = '#fff';
+    } else if (liveVoteCounts.size || [...consecutiveHits.values()].some((count) => count > 0)) {
+      const top = [...new Set([...liveVoteCounts.keys(), ...consecutiveHits.keys()])]
+        .map((text) => ({
+          text,
+          votes: liveVoteCounts.get(text) || 0,
+          consecutive: consecutiveHits.get(text) || 0,
+        }))
+        .sort((a, b) => b.votes - a.votes || b.consecutive - a.consecutive)[0];
+      statusEl.textContent = `已检测：${top.text}（${top.votes}/${VOTES_TO_CONFIRM} 帧），正在确认…`;
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      statusEl.style.backgroundColor = '#d97706';
+      statusEl.style.color = '#fff';
     } else {
       statusEl.textContent = '请把条形码放入扫码框内，会自动识别';
       statusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300';
+      statusEl.style.backgroundColor = 'rgba(17,24,39,.94)';
+      statusEl.style.color = '#fff';
     }
   }
 
@@ -287,7 +318,7 @@ const CameraCapture = (function () {
 
   async function timedDecode(imageData, options, label) {
     const startedAt = performance.now();
-    const candidates = await BarcodeScan.decodeCandidates(imageData, options);
+    const candidates = await window.BarcodeScan.decodeCandidates(imageData, options);
     const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
     if (cameraDiagnostics) {
       cameraDiagnostics.lastAttempts ||= [];
@@ -308,6 +339,8 @@ const CameraCapture = (function () {
     const candidates = await timedDecode(fullImage, {
       formats: PRIMARY_FORMATS,
       maxNumberOfSymbols: 12,
+      filterPlausible: false,
+      throwOnError: true,
     }, 'Code128 全画面 1280');
     if (session !== scanSession) return [];
 
@@ -315,18 +348,17 @@ const CameraCapture = (function () {
       ...candidate,
       inGuide: isPositionInGuide(candidate.position, fullImage.width, fullImage.height),
     }));
-    const primaryInGuide = positionedPrimary.filter((candidate) => candidate.inGuide);
-    if (primaryInGuide.length) return primaryInGuide;
+    // 参考页的扫码框只是取景提示，不是硬过滤条件。完整画面只要得到校验通过的
+    // Code128 就必须进入投票，否则坐标缺失、旋转或稍微出框都会把正确结果丢掉。
+    if (positionedPrimary.length) return positionedPrimary;
 
     const allowFullFrameFallback = missCount >= FALLBACK_AFTER_MISSES && frameNo % FALLBACK_EVERY === 0;
-    // 框外 Code128 不能抢占框内结果；连续失败后才作为低频全画面兜底。
-    if (positionedPrimary.length && allowFullFrameFallback) return positionedPrimary;
-
     // 连续若干轮没有 Code128 后才低频尝试其他一维格式，避免每轮扩大搜索空间。
     if (!positionedPrimary.length && allowFullFrameFallback) {
       const fallbackCandidates = await timedDecode(fullImage, {
         formats: FALLBACK_FORMATS,
         maxNumberOfSymbols: 6,
+        throwOnError: true,
       }, '其他一维码低频兜底');
       if (session !== scanSession) return [];
       const positionedFallback = fallbackCandidates.map((candidate) => ({
@@ -421,6 +453,7 @@ const CameraCapture = (function () {
       for (const frame of voteWindow) {
         for (const text of frame) voteCounts.set(text, (voteCounts.get(text) || 0) + 1);
       }
+      liveVoteCounts = voteCounts;
 
       const confirmedTexts = [...voteCounts.keys()]
         .filter((text) =>
@@ -446,6 +479,7 @@ const CameraCapture = (function () {
         updateScanStatus();
       }
     } catch (e) {
+      showCameraStatus(`实时识别异常：${e?.message || e}`, 'err');
       if (Date.now() - lastScanErrorAt > 5000) {
         console.warn('实时条码识别失败，将继续重试：', e);
         lastScanErrorAt = Date.now();
@@ -494,16 +528,20 @@ const CameraCapture = (function () {
     if (title) title.textContent = options.title || '拍照上传';
     modal.classList.remove('hidden');
     setCaptureButtonBusy(false, '拍摄');
-    showCameraStatus('正在请求摄像头权限…', 'warn');
+    showCameraStatus('正在加载条码识别核心…', 'warn');
     const video = el('camera-video');
     try {
-      // 主动要一个较高分辨率的画面（很多手机浏览器默认给的分辨率偏低，条码本来就小的话
-      // 更难识别）；ideal 只是期望值，设备给不了会自动降级，不会导致打不开摄像头。
-      // 注意：只给 width 一个期望值，不强行指定 height——手机摄像头天生是长方形
-      // （常见 3:4 / 9:16），width/height 都指定成一样的数等于要求一个正方形画面，
-      // 会跟设备实际拍出来的画幅对不上，看起来就是"跟手机摄像头本身不一样"。
+      if (!window.BarcodeScan?.prepare) throw new Error('条码识别核心未加载');
+      await window.BarcodeScan.prepare();
+      showCameraStatus('识别核心已加载，正在请求摄像头权限…', 'warn');
+      // 与高成功率参考页保持相同的期望参数；ideal 无法满足时浏览器仍会自动降级。
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 } },
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
       });
       video.srcObject = stream;
       await video.play();
@@ -521,6 +559,7 @@ const CameraCapture = (function () {
       window.__barcodeCameraDiagnostics = cameraDiagnostics;
       console.info('条码摄像头参数：', cameraDiagnostics);
       updateScanGuidePosition();
+      showCameraStatus('摄像头已开启，请把条形码完整放进框内', 'info');
       startScanLoop();
     } catch (e) {
       toast('摄像头打开失败，已切换到系统拍照/选图', 'err', 4200);
@@ -547,7 +586,11 @@ const CameraCapture = (function () {
     if (notifyCancel) onCancel?.();
   }
 
-  function capture() {
+  function canvasToJpegBlob(canvas) {
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+  }
+
+  async function capture() {
     const video = el('camera-video');
     const shootButton = el('camera-btn-shoot');
     if (shootButton?.disabled) return;
@@ -561,7 +604,7 @@ const CameraCapture = (function () {
     // 拍照这一下，如果实时循环已经连续确认过一个号码且还在锁定时间内，直接采信——
     // 用户在按下快门前就已经在状态栏看到了这个号码，拍出来的静态照片再重新识别一遍
     // 反而可能因为摩尔纹等原因得到不一致的结果，没必要多此一举。
-    const recognizedText = (liveCode && Date.now() < lockedUntil) ? liveCode : null;
+    let recognizedText = (liveCode && Date.now() < lockedUntil) ? liveCode : null;
     stopScanLoop();
     setCaptureButtonBusy(true, '正在拍照…');
     showCameraStatus(
@@ -578,8 +621,44 @@ const CameraCapture = (function () {
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
-    canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-    canvas.toBlob(async (blob) => {
+    canvas.getContext('2d', { willReadFrequently: true }).drawImage(video, 0, 0, w, h);
+
+    // 参考页的关键路径：没有实时锁定结果时，先直接识别未压缩 Canvas，
+    // 再生成用于上传的 JPEG。不能先压缩再识别，否则细条纹边缘会被 JPEG 损伤。
+    if (!recognizedText) {
+      setCaptureButtonBusy(true, '正在确认…');
+      showCameraStatus('当前没有锁定结果，正在进行四级多尺寸识别…', 'warn');
+      try {
+        const candidates = await window.BarcodeScan.decodeCanvasCandidates(canvas, {
+          courierName: selectedCourierName(),
+        });
+        recognizedText = await window.BarcodeScan.chooseCandidate(candidates);
+      } catch (error) {
+        console.error('未压缩拍照画面识别失败：', error);
+        setCaptureButtonBusy(false, '重新拍摄');
+        showCameraStatus(`本次确认异常：${error?.message || error}，已恢复实时扫描`, 'err');
+        setTimeout(() => { if (stream) startScanLoop(); }, 450);
+        return;
+      }
+
+      // 行内“扫码识别单号”必须识别成功才退出；失败时完全复刻参考页，恢复实时扫描。
+      if (!recognizedText && activeContext.mode === 'row-tracking-scan') {
+        setCaptureButtonBusy(false, '重新拍摄');
+        showCameraStatus('本次照片未识别成功，已自动恢复实时扫描', 'warn');
+        setTimeout(() => { if (stream) startScanLoop(); }, 450);
+        return;
+      }
+      if (recognizedText) {
+        liveCode = recognizedText;
+        lockedUntil = Date.now() + LOCK_HOLD_MS;
+        setScanGuideReady(true);
+        showCameraStatus(`拍照识别成功：${recognizedText}，正在保存…`, 'ok');
+        if (navigator.vibrate) navigator.vibrate([80, 60, 120]);
+      }
+    }
+
+    const blob = await canvasToJpegBlob(canvas);
+    {
       if (!blob) {
         toast('拍照失败，请重试', 'err');
         setCaptureButtonBusy(false, '重新拍摄');
@@ -598,7 +677,8 @@ const CameraCapture = (function () {
       );
       setCaptureButtonBusy(true, recognizedText ? '正在保存…' : '正在识别…');
       try {
-        if (cb) await cb(file, recognizedText, reportStatus);
+        // 第四个参数表示已经对未压缩 Canvas 完成识别，业务层不要再对 JPEG 重复解码。
+        if (cb) await cb(file, recognizedText, reportStatus, true);
       } catch (error) {
         console.error('拍照后处理失败：', error);
         toast('照片处理失败，请重试', 'err');
@@ -606,7 +686,7 @@ const CameraCapture = (function () {
         close(false, true);
         setCaptureButtonBusy(false, '拍摄');
       }
-    }, 'image/jpeg', 0.92);
+    }
   }
 
   function init() {

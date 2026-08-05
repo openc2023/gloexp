@@ -95,7 +95,9 @@ const BarcodeScan = (function () {
       for (const r of results) {
         if (!r?.isValid || typeof r.text !== 'string') continue;
         const text = r.text.trim();
-        if (!text || !isPlausibleTrackingNumber(text) || seen.has(text)) continue;
+        // 参考页的实时 Code128 链路只检查 ZXing 校验是否通过，不在解码阶段
+        // 按长度删除结果。业务合理性应当用于排序/确认，而不是让正确结果消失。
+        if (!text || (options.filterPlausible !== false && !isPlausibleTrackingNumber(text)) || seen.has(text)) continue;
         seen.add(text);
         candidates.push({ text, format: r.format, position: r.position || null });
       }
@@ -106,6 +108,7 @@ const BarcodeScan = (function () {
         console.warn('条形码解码失败：', e);
         lastDecodeErrorAt = Date.now();
       }
+      if (options.throwOnError) throw e;
       return [];
     }
   }
@@ -175,13 +178,16 @@ const BarcodeScan = (function () {
     }
   }
 
-  async function collectCanvasCandidates(store, canvas, source) {
+  async function collectCanvasCandidates(store, canvas, source, decodeOptions = {}) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const candidates = await decodeCandidates(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    const candidates = await decodeCandidates(
+      ctx.getImageData(0, 0, canvas.width, canvas.height),
+      decodeOptions
+    );
     addCandidateGroup(store, candidates, source);
   }
 
-  async function collectTiledCandidates(store, img) {
+  async function collectTiledCandidates(store, img, decodeOptions = {}) {
     const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
     const cols = 3, rows = 3, overlap = 0.2;
     const tileW = w / cols, tileH = h / rows;
@@ -191,10 +197,42 @@ const BarcodeScan = (function () {
         const y = Math.max(0, row * tileH - tileH * overlap);
         const width = Math.min(w - x, tileW * (1 + overlap * 2));
         const height = Math.min(h - y, tileH * (1 + overlap * 2));
-        const candidates = await decodeCandidates(imageDataFrom(img, x, y, width, height));
+        const candidates = await decodeCandidates(imageDataFrom(img, x, y, width, height), decodeOptions);
         addCandidateGroup(store, candidates, `局部区域 ${row + 1}-${col + 1}`);
       }
     }
+  }
+
+  async function collectReferenceScales(store, source, decodeOptions = {}) {
+    const workingCanvas = createScaledCanvas(source, PHOTO_MAX_SIDE);
+    const retryCanvas = createScaledCanvas(workingCanvas, PHOTO_RETRY_MAX_SIDE);
+    const cropCanvas = createCenterBarcodeCrop(workingCanvas);
+    const cropRetryCanvas = createScaledCanvas(cropCanvas, PHOTO_RETRY_MAX_SIDE);
+    await collectCanvasCandidates(store, workingCanvas, '完整照片', decodeOptions);
+    await collectCanvasCandidates(store, retryCanvas, '完整照片 1280', decodeOptions);
+    await collectCanvasCandidates(store, cropCanvas, '中央区域', decodeOptions);
+    await collectCanvasCandidates(store, cropRetryCanvas, '中央区域 1280', decodeOptions);
+    return workingCanvas;
+  }
+
+  // 直接识别尚未压缩成 JPEG 的拍照 Canvas。四级尺寸与参考测试页一致，
+  // 避免窄条纹先经过 JPEG 压缩后再解码造成的边缘模糊和摩尔纹。
+  async function decodeCanvasCandidates(source, options = {}) {
+    const found = new Map();
+    const primaryOptions = {
+      formats: ['Code128'],
+      maxNumberOfSymbols: 12,
+      filterPlausible: false,
+      throwOnError: true,
+    };
+    await collectReferenceScales(found, source, primaryOptions);
+    if (!found.size && options.allowFallbackFormats !== false) {
+      await collectReferenceScales(found, source, {
+        formats: TRACKING_FORMATS.filter((format) => format !== 'Code128'),
+        maxNumberOfSymbols: MAX_SYMBOLS_PER_FRAME,
+      });
+    }
+    return sortCandidates([...found.values()], options.courierName);
   }
 
   function matchesCourierRule(text, courierName) {
@@ -306,17 +344,23 @@ const BarcodeScan = (function () {
 
       // 手机原图可能达到 12MP～48MP；直接生成多份全尺寸 ImageData 会让移动浏览器
       // 卡死或触发 WASM 内存不足。与高成功率测试页一致，先限制工作图最长边。
-      const workingCanvas = createScaledCanvas(img, PHOTO_MAX_SIDE);
-      const retryCanvas = createScaledCanvas(workingCanvas, PHOTO_RETRY_MAX_SIDE);
-      const cropCanvas = createCenterBarcodeCrop(workingCanvas);
-      const cropRetryCanvas = createScaledCanvas(cropCanvas, PHOTO_RETRY_MAX_SIDE);
       const found = new Map();
 
-      // 与测试页一致：完整高分辨率、1280、中央区域、中央区域1280四级确认。
-      await collectCanvasCandidates(found, workingCanvas, '完整照片');
-      await collectCanvasCandidates(found, retryCanvas, '完整照片 1280');
-      await collectCanvasCandidates(found, cropCanvas, '中央区域');
-      await collectCanvasCandidates(found, cropRetryCanvas, '中央区域 1280');
+      // 第一轮完全采用参考页：四级尺寸全部只认 Code128，且不提前按长度删除。
+      const workingCanvas = await collectReferenceScales(found, img, {
+        formats: ['Code128'],
+        maxNumberOfSymbols: 12,
+        filterPlausible: false,
+        throwOnError: true,
+      });
+
+      // 四级 Code128 均失败后，再尝试其他一维码，避免无关格式拖慢主链路。
+      if (!found.size) {
+        await collectReferenceScales(found, img, {
+          formats: TRACKING_FORMATS.filter((format) => format !== 'Code128'),
+          maxNumberOfSymbols: MAX_SYMBOLS_PER_FRAME,
+        });
+      }
 
       // 四种常规尝试均没有结果时才运行较贵的分块和去噪，不拖慢正常扫码。
       const big = workingCanvas.width * workingCanvas.height >= 700 * 700;
@@ -389,5 +433,18 @@ const BarcodeScan = (function () {
     });
   }
 
-  return { decodeFile, decodeFileCandidates, chooseCandidate, decodeImageData, decodeCandidates };
+  return {
+    prepare: ensureModule,
+    decodeFile,
+    decodeFileCandidates,
+    decodeCanvasCandidates,
+    chooseCandidate,
+    decodeImageData,
+    decodeCandidates,
+  };
 })();
+
+// 经典 script 中顶层 const 属于全局词法绑定，但不会成为 window 的属性。
+// camera-capture.js 需要通过 window.BarcodeScan 判断模块是否已经加载；不显式导出时，
+// 静态图片识别能调用 BarcodeScan，而实时摄像头循环却会每帧直接 return。
+window.BarcodeScan = BarcodeScan;

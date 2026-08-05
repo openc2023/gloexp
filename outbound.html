@@ -32,7 +32,7 @@
               </div>
               <div class="flex gap-2">
                 <button id="btn-export" class="hidden px-3.5 py-2 text-xs font-medium rounded-md border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">导出 CSV</button>
-                <a href="inbound.html" class="px-3.5 py-2 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">+ 新增入库单</a>
+                <a href="inbound.html" id="btn-new-inbound" class="inline-flex items-center px-3.5 py-2 text-xs font-medium rounded-md bg-purple-600 hover:bg-purple-700 text-white">+ 新增入库单</a>
               </div>
             </div>
             <div class="p-5 border-b border-gray-100 dark:border-gray-700">
@@ -296,7 +296,7 @@
   .tracking-icon-btn,.mobile-close-btn{display:inline-flex;align-items:center;justify-content:center;border-radius:.45rem}
   .tracking-icon-btn{min-width:2rem;min-height:2rem}
   .mobile-close-btn{min-width:2.75rem;min-height:2.75rem;margin:-.5rem}
-  .field,.ob-status-btn,#btn-search,#btn-reset,#btn-export,#fl-btn-camera,#row-scan-btn-camera,#camera-btn-shoot,#fill-form button[type="submit"],#fill-form [data-close-fill]{min-height:2.75rem}
+  .field,.ob-status-btn,#btn-search,#btn-reset,#btn-export,#btn-new-inbound,#fl-btn-camera,#row-scan-btn-camera,#camera-btn-shoot,#fill-form button[type="submit"],#fill-form [data-close-fill]{min-height:2.75rem}
   .tracking-saving{opacity:.65;pointer-events:none}
   #camera-modal,#row-scan-modal{padding-top:max(.5rem,env(safe-area-inset-top));padding-right:max(.5rem,env(safe-area-inset-right));padding-bottom:max(.5rem,env(safe-area-inset-bottom));padding-left:max(.5rem,env(safe-area-inset-left))}
   #camera-modal .modal-panel,#row-scan-modal .modal-panel{max-height:calc(100dvh - 1rem);overflow-y:auto;overscroll-behavior:contain}
@@ -387,10 +387,10 @@
   <script src="assets/js/auth.js?v=20260804n"></script>
   <script src="assets/js/nav.js?v=20260804d"></script>
   <script src="assets/vendor/zxing-wasm/zxing-reader.js?v=20260804p"></script>
-  <script src="assets/js/barcode-scan.js?v=20260805c"></script>
-  <script src="assets/js/camera-capture.js?v=20260805f"></script>
+  <script src="assets/js/barcode-scan.js?v=20260805e"></script>
+  <script src="assets/js/camera-capture.js?v=20260805g"></script>
   <script src="assets/js/lightbox.js?v=20260804a"></script>
-  <script src="assets/js/outbound.js?v=20260805f"></script>
+  <script src="assets/js/outbound.js?v=20260805g"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('outbound.html'); initOutbound(); });
     Auth.protectPage();

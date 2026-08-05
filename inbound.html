@@ -36,7 +36,7 @@
             </div>
             <p class="text-xs text-gray-400 mb-3">粘贴客户发来的原始文本（姓名/电话/地址/负责人/快递公司），自动识别并填充下方表单</p>
             <textarea id="parse-text" rows="3" placeholder="例如：姓名：张三 电话：13812345678 邮寄地址：广东省深圳市南山区xxx路xx号 负责人：李四 顺丰 特快"
-              class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+              class="field"></textarea>
             <div class="mt-3">
               <button id="btn-parse" class="w-full sm:w-auto px-4 py-2.5 sm:py-2 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white">智能解析</button>
             </div>
@@ -163,10 +163,10 @@
   <script src="assets/js/nav.js?v=20260804d"></script>
   <script src="assets/vendor/zh-address-parse/zh-address-parse.min.js?v=20260804a"></script>
   <script src="assets/vendor/zxing-wasm/zxing-reader.js?v=20260804p"></script>
-  <script src="assets/js/barcode-scan.js?v=20260805c"></script>
-  <script src="assets/js/camera-capture.js?v=20260805f"></script>
+  <script src="assets/js/barcode-scan.js?v=20260805e"></script>
+  <script src="assets/js/camera-capture.js?v=20260805g"></script>
   <script src="assets/js/lightbox.js?v=20260804a"></script>
-  <script src="assets/js/inbound.js?v=20260805f"></script>
+  <script src="assets/js/inbound.js?v=20260805g"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('inbound.html'); initInbound(); });
     Auth.protectPage();
