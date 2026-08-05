@@ -323,14 +323,54 @@ function renderOutboundTable() {
 function trackingCellHtml(r) {
   const display = r.tracking_number ? `<span class="font-mono">${esc(r.tracking_number)}</span>` : '<span class="text-gray-300">未填写</span>';
   const editBtn = hasPerm('parcels:edit') ? `
-    <button type="button" class="tracking-edit-btn text-gray-400 hover:text-purple-600 flex-shrink-0 -m-1 p-1" data-edit-tracking="${r.id}" title="修改单号">
+    <button type="button" class="tracking-icon-btn tracking-edit-btn text-gray-400 hover:text-purple-600 flex-shrink-0" data-edit-tracking="${r.id}" title="修改单号" aria-label="修改单号">
       <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     </button>` : '';
   const scanBtn = hasPerm('parcels:edit') ? `
-    <button type="button" class="text-gray-400 hover:text-purple-600 flex-shrink-0 -m-1 p-1" data-scan-tracking="${r.id}" title="拍照/选图扫码识别">
+    <button type="button" class="tracking-icon-btn text-gray-400 hover:text-purple-600 flex-shrink-0" data-scan-tracking="${r.id}" title="拍照/选图扫码识别" aria-label="拍照/选图扫码识别">
       <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2m8-16h2a2 2 0 012 2v2m-4 12h2a2 2 0 002-2v-2M7 8v8m3-8v8m4-8v8m3-8v8"/></svg>
     </button>` : '';
   return `<div class="inline-flex items-center gap-1.5" data-tracking-cell="${r.id}">${display}${editBtn}${scanBtn}</div>`;
+}
+
+function bindTrackingCellActions(cell, id) {
+  cell?.querySelector(`[data-edit-tracking="${CSS.escape(String(id))}"]`)
+    ?.addEventListener('click', () => openTrackingInlineEdit(id));
+  cell?.querySelector(`[data-scan-tracking="${CSS.escape(String(id))}"]`)
+    ?.addEventListener('click', () => scanTrackingForRow(id));
+}
+
+function restoreTrackingCell(id) {
+  const row = getRow(id);
+  const current = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`);
+  if (!row || !current) return null;
+  const holder = document.createElement('div');
+  holder.innerHTML = trackingCellHtml(row);
+  const next = holder.firstElementChild;
+  current.replaceWith(next);
+  bindTrackingCellActions(next, id);
+  return next;
+}
+
+function captureTrackingScrollAnchor(id) {
+  const main = document.querySelector('main');
+  const row = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`)?.closest('tr');
+  return { main, scrollTop: main?.scrollTop || 0, rowTop: row?.getBoundingClientRect().top ?? null };
+}
+
+function restoreTrackingScrollAnchor(anchor, id) {
+  if (!anchor?.main) return;
+  const restore = () => {
+    const row = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`)?.closest('tr');
+    if (row && anchor.rowTop != null) {
+      anchor.main.scrollTop += row.getBoundingClientRect().top - anchor.rowTop;
+    } else {
+      anchor.main.scrollTop = anchor.scrollTop;
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(restore));
+  // 手机软键盘收起时 visualViewport 变化会稍有延迟，再校正一次。
+  setTimeout(restore, 180);
 }
 
 function openTrackingInlineEdit(id) {
@@ -338,11 +378,11 @@ function openTrackingInlineEdit(id) {
   const cell = document.querySelector(`[data-tracking-cell="${CSS.escape(String(id))}"]`);
   if (!row || !cell) return;
   cell.innerHTML = `
-    <input type="text" class="field !w-36 !py-1 font-mono" id="tracking-inline-input-${id}" value="${esc(row.tracking_number || '')}" placeholder="填写单号" />
-    <button type="button" class="text-emerald-600 hover:text-emerald-800 flex-shrink-0" data-confirm-tracking="${id}" title="保存">
+    <input type="text" class="field tracking-inline-input !w-36 !py-1 font-mono" id="tracking-inline-input-${id}" value="${esc(row.tracking_number || '')}" placeholder="填写单号" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" />
+    <button type="button" class="tracking-icon-btn text-emerald-600 hover:text-emerald-800 flex-shrink-0" data-confirm-tracking="${id}" title="保存" aria-label="确认保存单号">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
     </button>
-    <button type="button" class="text-gray-400 hover:text-gray-600 flex-shrink-0" data-cancel-tracking="${id}" title="取消">
+    <button type="button" class="tracking-icon-btn text-gray-400 hover:text-gray-600 flex-shrink-0" data-cancel-tracking="${id}" title="取消" aria-label="取消修改单号">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
     </button>`;
   const input = document.getElementById(`tracking-inline-input-${id}`);
@@ -356,13 +396,13 @@ function openTrackingInlineEdit(id) {
   cell.querySelector(`[data-cancel-tracking="${id}"]`).addEventListener('click', () => cancelTrackingInlineEdit(input));
 }
 
-// 保存/取消的时候都要先让输入框失焦，再去整段替换 tbody.innerHTML——手机上如果
-// 直接把还聚焦着的输入框从 DOM 里连根拔掉，Safari 会把页面滚动位置弹回顶部，
-// 表现出来就是"点了对勾/取消，页面莫名跳到最上面"。先手动 blur() 让浏览器有机会
-// 正常收起输入法/缩放状态，再动 DOM，就不会有这个跳动了。
+// 取消时只恢复当前单号单元格，不重绘整张表。手机软键盘还在收起时替换 tbody，
+// Safari/Chrome 都可能丢失原滚动锚点并跳到页面顶部。
 function cancelTrackingInlineEdit(input) {
+  if (input?.dataset.saving === '1') return;
+  const id = input?.id?.replace('tracking-inline-input-', '');
   input?.blur();
-  renderOutboundTable();
+  if (id) restoreTrackingCell(id);
 }
 
 // 展示态点相机图标：弹出小面板，可拖拽/选图，也可以拍照（三种方式最终都走
@@ -436,6 +476,7 @@ async function processRowScanFile(file, knownText, reportStatus) {
 async function saveTrackingValue(id, rawValue, { input = null, fromScan = false, skipDuplicateCheck = false } = {}) {
   const row = getRow(id);
   if (!row) return false;
+  const scrollAnchor = captureTrackingScrollAnchor(id);
   const value = String(rawValue || '').trim().toUpperCase();
 
   if (value && (value.length < 4 || value.length > 40)) {
@@ -464,16 +505,34 @@ async function saveTrackingValue(id, rawValue, { input = null, fromScan = false,
     toast(fromScan
       ? (autoShip ? '扫码单号已自动保存，并切换为已邮寄' : '扫码单号已自动保存')
       : (autoShip ? '已保存，并自动切换为已邮寄' : '单号已更新'), 'ok');
-    input?.blur(); // 先失焦再刷新列表，避免手机上跳动
-    loadOutboundList();
+    input?.blur();
+    row.tracking_number = value;
+    if (autoShip) row.status = 'shipped';
+    const nextCell = restoreTrackingCell(id);
+    const statusCell = nextCell?.closest('tr')?.querySelector('td[data-label="状态"]');
+    if (statusCell) statusCell.innerHTML = obStatusBadge(row.status);
+    restoreTrackingScrollAnchor(scrollAnchor, id);
     return true;
   } catch (e) { return false; /* toast shown */ }
 }
 
 async function saveTrackingInline(id) {
   const input = document.getElementById(`tracking-inline-input-${id}`);
-  if (!input) return;
-  await saveTrackingValue(id, input.value, { input });
+  if (!input || input.dataset.saving === '1') return;
+  input.dataset.saving = '1';
+  input.readOnly = true;
+  const cell = input.closest('[data-tracking-cell]');
+  const buttons = Array.from(cell?.querySelectorAll('button') || []);
+  buttons.forEach((button) => { button.disabled = true; });
+  cell?.classList.add('tracking-saving');
+  const saved = await saveTrackingValue(id, input.value, { input });
+  if (!saved && input.isConnected) {
+    input.dataset.saving = '0';
+    input.readOnly = false;
+    buttons.forEach((button) => { button.disabled = false; });
+    cell?.classList.remove('tracking-saving');
+    input.focus({ preventScroll: true });
+  }
 }
 
 // ── 行选择（导出用）────────────────────────────────────────

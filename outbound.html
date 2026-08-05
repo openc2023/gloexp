@@ -2,10 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>快递管理 · 环球寄件</title>
 <link rel="stylesheet" href="assets/css/tailwind.output.css?v=20260804a">
-<link rel="stylesheet" href="assets/css/app.css?v=20260805e">
+<link rel="stylesheet" href="assets/css/app.css?v=20260805f">
 </head>
 <body class="font-sans antialiased bg-gray-50 dark:bg-gray-900">
   <div id="boot-loading" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -246,7 +246,7 @@
     <div class="modal-panel relative w-full max-w-2xl rounded-lg bg-white dark:bg-gray-800 shadow-xl p-3">
       <div class="flex items-center justify-between mb-2">
         <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">拍照</h3>
-        <button type="button" data-close-camera class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <button type="button" data-close-camera class="mobile-close-btn text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" aria-label="关闭拍照">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
@@ -261,7 +261,7 @@
     <div class="modal-panel relative w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 shadow-xl p-4">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">扫码识别单号</h3>
-        <button type="button" data-close-row-scan class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <button type="button" data-close-row-scan class="mobile-close-btn text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" aria-label="关闭扫码识别">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
@@ -291,6 +291,15 @@
   .field:focus{outline:none;box-shadow:0 0 0 2px rgb(168 85 247)}
   .ob-status-btn.active{background:rgb(147 51 234);color:#fff}
   .ob-status-btn{white-space:nowrap}
+  #app{height:100dvh}
+  button,a,select,label[for]{touch-action:manipulation}
+  .tracking-icon-btn,.mobile-close-btn{display:inline-flex;align-items:center;justify-content:center;border-radius:.45rem}
+  .tracking-icon-btn{min-width:2rem;min-height:2rem}
+  .mobile-close-btn{min-width:2.75rem;min-height:2.75rem;margin:-.5rem}
+  .field,.ob-status-btn,#btn-search,#btn-reset,#btn-export,#fl-btn-camera,#row-scan-btn-camera,#camera-btn-shoot,#fill-form button[type="submit"],#fill-form [data-close-fill]{min-height:2.75rem}
+  .tracking-saving{opacity:.65;pointer-events:none}
+  #camera-modal,#row-scan-modal{padding-top:max(.5rem,env(safe-area-inset-top));padding-right:max(.5rem,env(safe-area-inset-right));padding-bottom:max(.5rem,env(safe-area-inset-bottom));padding-left:max(.5rem,env(safe-area-inset-left))}
+  #camera-modal .modal-panel,#row-scan-modal .modal-panel{max-height:calc(100dvh - 1rem);overflow-y:auto;overscroll-behavior:contain}
 
   /* 筛选面板网格 — 复刻自 v5 adminlte-app.css #view-outbound .courier-filter-panel */
   .courier-filter-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.625rem;align-items:end}
@@ -367,8 +376,10 @@
 
     #ob-tbody td[data-label="操作"]{grid-column:1 / -1;grid-row:5;padding-top:.15rem !important}
     #ob-tbody td[data-label="操作"] .record-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
-    #ob-tbody td[data-label="操作"] .record-actions button{width:100%;min-height:2.35rem;justify-content:center;display:flex;align-items:center;border:1px solid rgb(229 231 235);border-radius:.5rem}
+    #ob-tbody td[data-label="操作"] .record-actions button{width:100%;min-height:2.75rem;justify-content:center;display:flex;align-items:center;border:1px solid rgb(229 231 235);border-radius:.5rem}
     html.dark #ob-tbody td[data-label="操作"] .record-actions button{border-color:rgb(75 85 99)}
+    #ob-tbody .tracking-icon-btn,.mobile-close-btn{min-width:2.75rem;min-height:2.75rem}
+    #ob-tbody .tracking-inline-input{min-width:0;width:calc(100% - 6rem) !important}
   }</style>
 
   <script src="assets/js/api-client.js?v=20260804a"></script>
@@ -377,9 +388,9 @@
   <script src="assets/js/nav.js?v=20260804d"></script>
   <script src="assets/vendor/zxing-wasm/zxing-reader.js?v=20260804p"></script>
   <script src="assets/js/barcode-scan.js?v=20260805c"></script>
-  <script src="assets/js/camera-capture.js?v=20260805e"></script>
+  <script src="assets/js/camera-capture.js?v=20260805f"></script>
   <script src="assets/js/lightbox.js?v=20260804a"></script>
-  <script src="assets/js/outbound.js?v=20260805e"></script>
+  <script src="assets/js/outbound.js?v=20260805f"></script>
   <script>
     document.addEventListener('auth:ready', () => { Nav.renderShell('outbound.html'); initOutbound(); });
     Auth.protectPage();

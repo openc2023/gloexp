@@ -54,6 +54,7 @@ const CameraCapture = (function () {
   let cameraDiagnostics = null;
   let liveCandidateMeta = new Map();
   let activeContext = {};
+  let captureBusy = false;
 
   function el(id) { return document.getElementById(id); }
 
@@ -86,6 +87,8 @@ const CameraCapture = (function () {
     if (!video) return null;
     scanStatusEl = document.createElement('div');
     scanStatusEl.id = 'camera-scan-status';
+    scanStatusEl.setAttribute('role', 'status');
+    scanStatusEl.setAttribute('aria-live', 'polite');
     scanStatusEl.className = 'mt-2 px-3 py-2 rounded-md text-sm text-center font-medium';
     Object.assign(scanStatusEl.style, {
       position: 'absolute',
@@ -127,9 +130,11 @@ const CameraCapture = (function () {
   }
 
   function setCaptureButtonBusy(busy, text) {
+    captureBusy = busy;
     const button = el('camera-btn-shoot');
     if (!button) return;
     button.disabled = busy;
+    button.setAttribute('aria-busy', busy ? 'true' : 'false');
     button.textContent = text || (busy ? '处理中…' : '拍摄');
     button.style.opacity = busy ? '0.65' : '';
   }
@@ -524,7 +529,11 @@ const CameraCapture = (function () {
     }
   }
 
-  function close(notifyCancel = false) {
+  function close(notifyCancel = false, force = false) {
+    if (captureBusy && !force) {
+      toast('照片正在识别和保存，请稍候', 'info');
+      return;
+    }
     const onCancel = activeContext.onCancel;
     stopScanLoop();
     resetScanState();
@@ -594,7 +603,7 @@ const CameraCapture = (function () {
         console.error('拍照后处理失败：', error);
         toast('照片处理失败，请重试', 'err');
       } finally {
-        close(false);
+        close(false, true);
         setCaptureButtonBusy(false, '拍摄');
       }
     }, 'image/jpeg', 0.92);

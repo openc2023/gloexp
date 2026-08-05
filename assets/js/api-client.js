@@ -30,7 +30,7 @@
     }, duration);
   }
 
-  async function request(action, { method = 'GET', params = {}, body, endpoint = 'auth' } = {}) {
+  async function request(action, { method = 'GET', params = {}, body, endpoint = 'auth', suppressErrorToast = false } = {}) {
     const qs = new URLSearchParams({ action, ...params });
     const url = `${API_BASE}${endpoint}.php?${qs.toString()}`;
     const opts = {
@@ -48,7 +48,7 @@
       res = await fetch(url, opts);
       data = await res.json();
     } catch (e) {
-      toast('网络异常，请重试', 'err');
+      if (!suppressErrorToast) toast('网络异常，请重试', 'err');
       throw e;
     }
 
@@ -61,7 +61,7 @@
 
     if (!data || data.ok !== true) {
       const msg = data?.msg || '操作失败';
-      toast(msg, 'err');
+      if (!suppressErrorToast) toast(msg, 'err');
       const err = new Error(msg);
       err.payload = data;
       throw err;

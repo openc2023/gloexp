@@ -274,10 +274,20 @@ async function runSmartParse() {
     toast(`检测到粘贴内容里像是有 ${blockCount} 条不同记录，只识别了第一条，其余请分别粘贴解析`, 'info', 5000);
   }
   let serverResult = {};
+  let usedLocalFallback = false;
   try {
-    const data = await Api.api('inbound', 'parse', { method: 'POST', body: { text } });
+    // 服务器解析失败时还会继续走本地地址库，不能让共享请求层先弹一个红色
+    // “网络异常”，随后又弹绿色“识别成功”，否则用户会以为结果不可信。
+    const data = await Api.api('inbound', 'parse', {
+      method: 'POST',
+      body: { text },
+      suppressErrorToast: true,
+    });
     serverResult = data.data || {};
-  } catch (e) { /* fall back to local parse only */ }
+  } catch (e) {
+    usedLocalFallback = true;
+    console.warn('服务器智能解析不可用，已切换到本地识别：', e);
+  }
   const merged = mergeSmartParseResult(serverResult, text);
 
   if (merged.name) document.getElementById('ib-name').value = merged.name;
@@ -317,7 +327,14 @@ async function runSmartParse() {
   // 内部备注保留完整原始粘贴内容（即使多条记录只识别了第一条，后面几条的原文仍留档可查）。
   const internalNote = document.getElementById('ib-internal-note');
   internalNote.value = internalNote.value ? internalNote.value + '\n' + rawText : rawText;
-  toast('已识别并填充表单，请核对后提交', 'ok');
+  const filledCount = [merged.name, merged.phone, merged.address].filter(Boolean).length;
+  if (usedLocalFallback && filledCount > 0) {
+    toast('服务器解析暂不可用，已使用本地识别填充表单，请核对后提交', 'info', 4200);
+  } else if (usedLocalFallback) {
+    toast('服务器解析暂不可用，本地也未识别出姓名、电话或地址，请手动填写', 'err', 5000);
+  } else {
+    toast('已识别并填充表单，请核对后提交', 'ok');
+  }
 }
 
 // ── 初始化 ──────────────────────────────────────────────────
