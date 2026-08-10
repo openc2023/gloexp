@@ -687,9 +687,13 @@ async function openLogistics(id) {
   // 浏览器打开快递100会被它自己的逻辑跳去"去小程序查看"引导页、单号带不过去；
   // 网络慢/页面异常时网页版一样可能要手动重新输入），手上已经有单号可以直接
   // 粘贴查，不用再翻回去抄一遍。
-  // 必须先 await 复制完成、再 window.open——顺序反过来的话，新标签页一开，
-  // 当前页面失去焦点，剪贴板写入这个异步操作可能因为文档不再是激活状态被
-  // 浏览器悄悄拒绝，之前 catch 又直接吞掉了错误，导致提示压根不出现。
+  // 必须先 await 复制完成、再弹提示——顺序反过来的话，新标签页一开当前页面
+  // 失去焦点，剪贴板写入这个异步操作可能被浏览器悄悄拒绝，之前 catch 又直接
+  // 吞掉了错误，导致提示压根不出现。
+  // window.open 本身还要再等一小会儿才触发：它一旦执行，浏览器几乎立刻把屏幕
+  // 切到新标签页，提示刚弹出来用户视线就已经跟着切走了，根本来不及看——留
+  // 700ms 让提示先被看到。这个延迟仍在同一次点击触发的执行链条里，不是凭空
+  // 弹出来的窗口，不会被浏览器的弹窗拦截拦住。
   const tracking = String(row?.tracking_number || '').trim().toUpperCase();
   try {
     await navigator.clipboard.writeText(tracking);
@@ -697,7 +701,7 @@ async function openLogistics(id) {
   } catch (e) {
     toast('单号复制失败，请手动复制：' + tracking, 'err', 4000);
   }
-  window.open(url, '_blank', 'noopener');
+  setTimeout(() => window.open(url, '_blank', 'noopener'), 700);
 }
 function publicTrackUrl() {
   // 注意：不能指向 index.html——那是需要登录的后台首页。公开查询页是 track.html。

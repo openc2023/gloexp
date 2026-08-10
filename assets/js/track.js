@@ -143,16 +143,22 @@ function trackCopyTracking(tracking) {
 async function trackOpenLogistics(tracking) {
   const value = String(tracking || '').trim();
   if (!value) return;
-  // 必须先 await 复制完成、再 window.open——顺序反过来的话，新标签页一开，
-  // 当前页面失去焦点，剪贴板写入这个异步操作可能因为文档不再是激活状态被
-  // 浏览器悄悄拒绝，之前 catch 又直接吞掉了错误，导致提示压根不出现。
+  const url = `https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(value)}`;
+
+  // window.open 一旦触发，浏览器几乎立刻把屏幕切到新标签页，当前页面上刚弹出来
+  // 的提示还没来得及被看到、视线已经跟着切走了——试过先开一个空白标签页占位、
+  // 之后再改地址跳转，但空白标签页本身一样会立刻抢焦点，并不能解决"看不到
+  // 提示"这个问题，反而多了个"新标签页先白屏一下"的怪异过渡，不如直接去掉。
+  // 实际做法：复制完成先把提示显示出来，稍微等一下再跳转，让提示有时间被看到。
+  // 跳转本身还是在同一次点击触发的执行链条里（只是隔了个 setTimeout），不是
+  // 凭空弹出来的窗口，正常不会被浏览器的弹窗拦截拦住。
   try {
     await navigator.clipboard.writeText(value.toUpperCase());
     toast('已复制单号：' + value.toUpperCase(), 'ok');
   } catch (e) {
     toast('单号复制失败，请手动复制：' + value.toUpperCase(), 'err', 4000);
   }
-  window.open(`https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(value)}`, '_blank', 'noopener');
+  setTimeout(() => window.open(url, '_blank', 'noopener'), 700);
 }
 
 function initTrack() {
