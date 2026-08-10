@@ -83,7 +83,7 @@ function renderImagePreview(container, images, onRemove) {
   container.innerHTML = images.map((path, idx) => `
     <div class="relative group">
       <img src="${esc(path)}" class="img-thumb cursor-zoom-in" data-lightbox-src="${esc(path)}" />
-      <button type="button" data-idx="${idx}" class="img-remove absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-sm leading-6 text-center shadow">×</button>
+      <button type="button" data-idx="${idx}" class="img-remove">×</button>
     </div>`).join('');
   container.querySelectorAll('[data-lightbox-src]').forEach((img) => img.addEventListener('click', () => Lightbox.open(img.dataset.lightboxSrc)));
   container.querySelectorAll('.img-remove').forEach((btn) => btn.addEventListener('click', () => onRemove(parseInt(btn.dataset.idx, 10))));

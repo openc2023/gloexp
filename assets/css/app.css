@@ -157,6 +157,35 @@ html.dark .skeleton-bar {
   border: 1px solid rgba(0,0,0,.08);
 }
 
+/* 删除缩略图的 × 按钮——手写 CSS 而不是靠 Tailwind 工具类（top-1.5/right-1.5/
+   bg-black/55 这些同样没被编译进 tailwind.output.css，跟之前 z-[N] 那次是
+   同一类问题：这份预编译文件缺的工具类比想象中多），之前用工具类的写法在
+   实际渲染时 position 的 top/right 完全不生效，按钮直接掉到图片下方、
+   贴着左边——不是"被第二排图片遮挡"表面看到的那样，是根本没有定位成功。
+   固定写死在图片框内右上角、留一点内缩，保证不管缩略图多大都不会跑到
+   图片外面被相邻格子盖住；白底红叉，比深色底白叉更醒目、辨识度更高。 */
+.img-remove {
+  position: absolute;
+  right: 0.375rem;
+  top: 0.375rem;
+  z-index: 10;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  background: #fff;
+  color: #dc2626;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+.img-remove:hover,
+.img-remove:active {
+  background: #dc2626;
+  color: #fff;
+}
+
 /* modal 遮罩淡入 */
 .modal-backdrop {
   animation: fadeIn 0.15s ease-out;
