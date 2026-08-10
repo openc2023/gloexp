@@ -683,6 +683,12 @@ function openLogistics(id) {
   const row = getRow(id);
   const url = logisticsUrl(row);
   if (!url) { toast('快递单号尚未填写', 'err'); return; }
+  // 跳转前先把单号复制到剪贴板——万一跳转过去的页面没有自动带上单号（微信内置
+  // 浏览器打开快递100会被它自己的逻辑跳去"去小程序查看"引导页、单号带不过去；
+  // 网络慢/页面异常时网页版一样可能要手动重新输入），手上已经有单号可以直接
+  // 粘贴查，不用再翻回去抄一遍。
+  const tracking = String(row?.tracking_number || '').trim().toUpperCase();
+  navigator.clipboard?.writeText(tracking).then(() => toast('已复制单号：' + tracking, 'ok')).catch(() => {});
   window.open(url, '_blank', 'noopener');
 }
 function publicTrackUrl() {

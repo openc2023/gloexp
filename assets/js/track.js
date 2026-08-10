@@ -136,19 +136,16 @@ function trackCopyTracking(tracking) {
 }
 // 快递100自己的网站检测到是微信内置浏览器打开的，会跳"去小程序查看"引导页，
 // 不显示查询结果、单号也不会带过去——这是它自己网站的行为，我们改不了。
-// 唯一能做的：微信里点"物流查询"之前先把单号复制到剪贴板，不管它最后弹出网页
-// 结果还是小程序引导，客户手上已经有单号了，直接粘贴查，不用再翻回去抄一遍。
-function isInWechat() {
-  return /MicroMessenger/i.test(navigator.userAgent || '');
-}
+// 不只是微信内才需要：不管在哪个浏览器打开，点"物流查询"都先把单号复制到
+// 剪贴板——万一跳转过去的页面没有像预期那样自动带上单号（不只微信会这样，
+// 网络慢/页面异常时网页版一样可能要手动重新输入），客户手上已经有单号了，
+// 直接粘贴查，不用再翻回去抄一遍。
 function trackOpenLogistics(tracking) {
   const value = String(tracking || '').trim();
   if (!value) return;
-  if (isInWechat()) {
-    navigator.clipboard?.writeText(value.toUpperCase())
-      .then(() => toast('已复制单号，如果跳转到小程序请直接粘贴查询', 'ok', 4000))
-      .catch(() => {});
-  }
+  navigator.clipboard?.writeText(value.toUpperCase())
+    .then(() => toast('已复制单号：' + value.toUpperCase(), 'ok'))
+    .catch(() => {});
   window.open(`https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(value)}`, '_blank', 'noopener');
 }
 
