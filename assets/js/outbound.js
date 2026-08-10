@@ -83,7 +83,7 @@ function renderImagePreview(container, images, onRemove) {
   container.innerHTML = images.map((path, idx) => `
     <div class="relative group">
       <img src="${esc(path)}" class="img-thumb cursor-zoom-in" data-lightbox-src="${esc(path)}" />
-      <button type="button" data-idx="${idx}" class="img-remove absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-4 text-center opacity-0 group-hover:opacity-100">×</button>
+      <button type="button" data-idx="${idx}" class="img-remove absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-sm leading-6 text-center shadow">×</button>
     </div>`).join('');
   container.querySelectorAll('[data-lightbox-src]').forEach((img) => img.addEventListener('click', () => Lightbox.open(img.dataset.lightboxSrc)));
   container.querySelectorAll('.img-remove').forEach((btn) => btn.addEventListener('click', () => onRemove(parseInt(btn.dataset.idx, 10))));
@@ -293,6 +293,7 @@ function renderOutboundTable() {
       <td data-label="状态" class="px-4 py-3">${obStatusBadge(r.status)}</td>
       <td data-label="操作" class="px-4 py-3">
         <div class="record-actions flex justify-end flex-wrap gap-2 text-xs">
+          <button data-copy-address="${r.id}" class="text-gray-500 hover:text-purple-600">复制地址</button>
           ${r.tracking_number ? `<button data-copy-track="${r.id}" class="text-gray-500 hover:text-purple-600">复制单号</button>` : ''}
           ${r.tracking_number ? `<button data-logistics="${r.id}" class="text-gray-500 hover:text-purple-600">物流查询</button>` : ''}
           ${r.tracking_number ? `<button data-notice="${r.id}" class="text-gray-500 hover:text-purple-600">客户通知</button>` : ''}
@@ -302,6 +303,7 @@ function renderOutboundTable() {
       </td>
     </tr>`).join('');
 
+  tbody.querySelectorAll('[data-copy-address]').forEach((b) => b.addEventListener('click', () => copyCustomerAddress(b.dataset.copyAddress)));
   tbody.querySelectorAll('[data-copy-track]').forEach((b) => b.addEventListener('click', () => copyTrackingNo(b.dataset.copyTrack)));
   tbody.querySelectorAll('[data-logistics]').forEach((b) => b.addEventListener('click', () => openLogistics(b.dataset.logistics)));
   tbody.querySelectorAll('[data-notice]').forEach((b) => b.addEventListener('click', () => copyCustomerNotice(b.dataset.notice)));
@@ -656,6 +658,14 @@ function renderPagination() {
 
 function getRow(id) { return OB.rows.find((x) => String(x.id) === String(id)); }
 function getCourierForRow(row) { return OB.couriers.find((c) => String(c.id) === String(row?.courier_id)); }
+
+// 复制姓名/电话/地址，方便直接粘到快递公司网站建单——跟"复制单号"不同，这个不需要
+// 已经有单号才能用，恰恰是去建单拿单号之前要用的，所以不按 tracking_number 门控显示。
+function copyCustomerAddress(id) {
+  const row = getRow(id);
+  if (!row?.name && !row?.address) { toast('这条记录还没有姓名或地址', 'err'); return; }
+  navigator.clipboard?.writeText(customerAddressText(row)).then(() => toast('已复制姓名/电话/地址', 'ok'));
+}
 
 function copyTrackingNo(id) {
   const row = getRow(id);

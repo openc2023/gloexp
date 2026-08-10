@@ -120,9 +120,18 @@
     };
   }
 
+  // 姓名/电话/地址拼成一段不带"姓名："这种标签的自然文本，方便直接粘到快递公司
+  // 网站的地址智能识别框里——那类识别框本来就是照着客户自己发来的文本训练的，
+  // 带标签反而更容易被当成地址的一部分识别错，不带标签兼容性最好。
+  function customerAddressText({ name, phone, address }) {
+    return [String(name || '').trim(), String(phone || '').trim()]
+      .filter(Boolean).join(' ') + (address ? '\n' + String(address).trim() : '');
+  }
+
   global.Api = { api, uploadFile, deleteUploadedFile };
   global.esc = esc;
   global.toast = toast;
   global.fmtDate = fmtDate;
   global.debounce = debounce;
+  global.customerAddressText = customerAddressText;
 })(window);
