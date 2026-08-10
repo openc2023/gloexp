@@ -140,12 +140,18 @@ function trackCopyTracking(tracking) {
 // 剪贴板——万一跳转过去的页面没有像预期那样自动带上单号（不只微信会这样，
 // 网络慢/页面异常时网页版一样可能要手动重新输入），客户手上已经有单号了，
 // 直接粘贴查，不用再翻回去抄一遍。
-function trackOpenLogistics(tracking) {
+async function trackOpenLogistics(tracking) {
   const value = String(tracking || '').trim();
   if (!value) return;
-  navigator.clipboard?.writeText(value.toUpperCase())
-    .then(() => toast('已复制单号：' + value.toUpperCase(), 'ok'))
-    .catch(() => {});
+  // 必须先 await 复制完成、再 window.open——顺序反过来的话，新标签页一开，
+  // 当前页面失去焦点，剪贴板写入这个异步操作可能因为文档不再是激活状态被
+  // 浏览器悄悄拒绝，之前 catch 又直接吞掉了错误，导致提示压根不出现。
+  try {
+    await navigator.clipboard.writeText(value.toUpperCase());
+    toast('已复制单号：' + value.toUpperCase(), 'ok');
+  } catch (e) {
+    toast('单号复制失败，请手动复制：' + value.toUpperCase(), 'err', 4000);
+  }
   window.open(`https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(value)}`, '_blank', 'noopener');
 }
 

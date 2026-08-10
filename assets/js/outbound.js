@@ -679,7 +679,7 @@ function logisticsUrl(row) {
   if (!tracking) return '';
   return `https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(tracking)}`;
 }
-function openLogistics(id) {
+async function openLogistics(id) {
   const row = getRow(id);
   const url = logisticsUrl(row);
   if (!url) { toast('快递单号尚未填写', 'err'); return; }
@@ -687,8 +687,16 @@ function openLogistics(id) {
   // 浏览器打开快递100会被它自己的逻辑跳去"去小程序查看"引导页、单号带不过去；
   // 网络慢/页面异常时网页版一样可能要手动重新输入），手上已经有单号可以直接
   // 粘贴查，不用再翻回去抄一遍。
+  // 必须先 await 复制完成、再 window.open——顺序反过来的话，新标签页一开，
+  // 当前页面失去焦点，剪贴板写入这个异步操作可能因为文档不再是激活状态被
+  // 浏览器悄悄拒绝，之前 catch 又直接吞掉了错误，导致提示压根不出现。
   const tracking = String(row?.tracking_number || '').trim().toUpperCase();
-  navigator.clipboard?.writeText(tracking).then(() => toast('已复制单号：' + tracking, 'ok')).catch(() => {});
+  try {
+    await navigator.clipboard.writeText(tracking);
+    toast('已复制单号：' + tracking, 'ok');
+  } catch (e) {
+    toast('单号复制失败，请手动复制：' + tracking, 'err', 4000);
+  }
   window.open(url, '_blank', 'noopener');
 }
 function publicTrackUrl() {
