@@ -293,10 +293,10 @@ function renderOutboundTable() {
       <td data-label="状态" class="px-4 py-3">${obStatusBadge(r.status)}</td>
       <td data-label="操作" class="px-4 py-3">
         <div class="record-actions flex justify-end flex-wrap gap-2 text-xs">
-          <button data-copy-address="${r.id}" class="text-gray-500 hover:text-purple-600">复制地址</button>
-          ${r.tracking_number ? `<button data-copy-track="${r.id}" class="text-gray-500 hover:text-purple-600">复制单号</button>` : ''}
-          ${r.tracking_number ? `<button data-logistics="${r.id}" class="text-gray-500 hover:text-purple-600">物流查询</button>` : ''}
-          ${r.tracking_number ? `<button data-notice="${r.id}" class="text-gray-500 hover:text-purple-600">客户通知</button>` : ''}
+          <button data-copy-address="${r.id}" class="text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400">复制地址</button>
+          ${r.tracking_number ? `<button data-copy-track="${r.id}" class="text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400">复制单号</button>` : ''}
+          ${r.tracking_number ? `<button data-logistics="${r.id}" class="text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400">物流查询</button>` : ''}
+          ${r.tracking_number ? `<button data-notice="${r.id}" class="text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400">客户通知</button>` : ''}
           ${hasPerm('parcels:edit') ? `<button data-fill="${r.id}" class="text-purple-600 hover:text-purple-800">${r.status === 'pending-ship' ? '填单号' : '编辑'}</button>` : ''}
           ${hasPerm('parcels:delete') ? `<button data-del="${r.id}" class="text-red-500 hover:text-red-700">删除</button>` : ''}
         </div>
