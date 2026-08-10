@@ -134,9 +134,21 @@ function trackCopyTracking(tracking) {
   if (!value) return;
   navigator.clipboard?.writeText(value).then(() => toast('已复制快递单号：' + value, 'ok')).catch(() => toast('复制失败', 'err'));
 }
+// 快递100自己的网站检测到是微信内置浏览器打开的，会跳"去小程序查看"引导页，
+// 不显示查询结果、单号也不会带过去——这是它自己网站的行为，我们改不了。
+// 唯一能做的：微信里点"物流查询"之前先把单号复制到剪贴板，不管它最后弹出网页
+// 结果还是小程序引导，客户手上已经有单号了，直接粘贴查，不用再翻回去抄一遍。
+function isInWechat() {
+  return /MicroMessenger/i.test(navigator.userAgent || '');
+}
 function trackOpenLogistics(tracking) {
   const value = String(tracking || '').trim();
   if (!value) return;
+  if (isInWechat()) {
+    navigator.clipboard?.writeText(value.toUpperCase())
+      .then(() => toast('已复制单号，如果跳转到小程序请直接粘贴查询', 'ok', 4000))
+      .catch(() => {});
+  }
   window.open(`https://www.kuaidi100.com/chaxun?nu=${encodeURIComponent(value)}`, '_blank', 'noopener');
 }
 
