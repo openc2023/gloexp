@@ -659,12 +659,26 @@ function renderPagination() {
 function getRow(id) { return OB.rows.find((x) => String(x.id) === String(id)); }
 function getCourierForRow(row) { return OB.couriers.find((c) => String(c.id) === String(row?.courier_id)); }
 
-// 复制姓名/电话/地址，方便直接粘到快递公司网站建单——跟"复制单号"不同，这个不需要
+// 复制客户信息，方便直接粘到快递公司网站建单——跟"复制单号"不同，这个不需要
 // 已经有单号才能用，恰恰是去建单拿单号之前要用的，所以不按 tracking_number 门控显示。
-function copyCustomerAddress(id) {
+// 内部备注在新增入库单走"智能解析"时，会把客户粘贴过来的原始文本整段存进去
+// （见 inbound.js 的 runSmartParse），比我们自己拼的"姓名 电话\n地址"更完整
+// （客户原文里可能还带着门牌号备注、快递公司偏好这些我们没单独字段存的信息），
+// 优先复制这个；手动录入、没有内部备注的记录才退回到拼接姓名/电话/地址。
+// 之前这里漏了 await/catch，navigator.clipboard.writeText 一旦被浏览器悄悄
+// 拒绝（不在 HTTPS/localhost 下、或者别的权限原因），点了跟没点一样，没有
+// 任何提示——现在跟"物流查询"那次修复一样，成功失败都会弹出明确提示。
+async function copyCustomerAddress(id) {
   const row = getRow(id);
-  if (!row?.name && !row?.address) { toast('这条记录还没有姓名或地址', 'err'); return; }
-  navigator.clipboard?.writeText(customerAddressText(row)).then(() => toast('已复制姓名/电话/地址', 'ok'));
+  const note = String(row?.internal_note || '').trim();
+  const text = note || customerAddressText(row);
+  if (!text) { toast('这条记录还没有可复制的信息', 'err'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('已复制' + (note ? '内部备注' : '姓名/电话/地址'), 'ok');
+  } catch (e) {
+    toast('复制失败，请手动复制', 'err', 4000);
+  }
 }
 
 function copyTrackingNo(id) {
