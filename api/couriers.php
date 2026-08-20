@@ -8,7 +8,7 @@
  * POST ?action=delete&id=
  */
 
-session_start();
+require_once __DIR__ . '/session_boot.php';
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
@@ -17,12 +17,17 @@ $action = $_GET['action'] ?? '';
 $user   = require_auth();
 
 if ($action === 'list') {
-    // 快递商列表无需特殊权限，登录即可（表单用）
-    $stmt = db()->query("SELECT * FROM couriers WHERE deleted_at IS NULL ORDER BY category, id ASC");
-    $rows = $stmt->fetchAll();
-    foreach ($rows as &$r) {
-        $r['service_types'] = json_decode($r['service_types'] ?? '["普通"]', true);
-    }
+    // 快递商列表无需特殊权限，登录即可（表单用）——每个人打开入库单/快递管理页面
+    // 都要查一次，但只有管理员改快递商设置时才会变，缓存 5 分钟（Redis 不可用时
+    // 自动退化成每次都查 SQLite，跟原来一样）。
+    $rows = cache_remember('couriers:list', 300, function () {
+        $stmt = db()->query("SELECT * FROM couriers WHERE deleted_at IS NULL ORDER BY category, id ASC");
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$r) {
+            $r['service_types'] = json_decode($r['service_types'] ?? '["普通"]', true);
+        }
+        return $rows;
+    });
     json_out(['ok' => true, 'data' => $rows]);
 }
 

@@ -8,7 +8,7 @@
  * POST ?action=delete&id=      删除模板（系统模板 & 使用中模板不可删）
  */
 
-session_start();
+require_once __DIR__ . '/session_boot.php';
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 require_once __DIR__ . '/db.php';

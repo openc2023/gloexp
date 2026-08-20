@@ -14,6 +14,55 @@ ini_set('log_errors', '1');
 define('DB_PATH', __DIR__ . '/../data/express.db');
 define('SCHEMA_MAINTENANCE_VERSION', 2026072609);
 
+// ── Redis 只读缓存（可选加速，不是数据源）───────────────────────
+// 用于缓存"高频读、低频改"的数据（快递商列表、负责人下拉、公开查快递结果这类），
+// 减轻并发高时对 SQLite 的重复查询压力。Redis 不可用时 cache_remember() 直接退化成
+// "每次都查 SQLite"，跟没有这层缓存时完全一样——SQLite 本身不做任何改动，所有写
+// 操作照旧，这里只是读路径前面加一层可选的旁路缓存。
+function redis_or_null(): ?Redis {
+    static $redis = null;
+    static $tried = false;
+    if ($tried) return $redis;
+    $tried = true;
+
+    if (!class_exists('Redis')) return null;
+    try {
+        $r = new Redis();
+        if (!@$r->connect('127.0.0.1', 6379, 0.2)) return null;
+        $redis = $r;
+    } catch (\Throwable $e) {
+        $redis = null;
+    }
+    return $redis;
+}
+
+/**
+ * 先查缓存，命中就直接返回；没命中（或 Redis 不可用）就跑 $compute() 查 SQLite，
+ * 查到的结果顺手写回缓存。$compute 的返回值必须是能 json_encode 的数组。
+ */
+function cache_remember(string $key, int $ttlSeconds, callable $compute): array {
+    $redis = redis_or_null();
+    if ($redis) {
+        try {
+            $cached = $redis->get($key);
+            if ($cached !== false) {
+                $decoded = json_decode($cached, true);
+                if (is_array($decoded)) return $decoded;
+            }
+        } catch (\Throwable $e) { /* 缓存读失败当作没命中，走下面正常查库 */ }
+    }
+
+    $value = $compute();
+
+    if ($redis) {
+        try {
+            $redis->setex($key, $ttlSeconds, json_encode($value, JSON_UNESCAPED_UNICODE));
+        } catch (\Throwable $e) { /* 缓存写失败不影响本次请求，数据已经算出来了 */ }
+    }
+
+    return $value;
+}
+
 function decode_permission_json($raw): array {
     if (is_array($raw)) {
         return array_values(array_filter($raw, 'is_string'));

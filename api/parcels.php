@@ -11,7 +11,7 @@
  * POST ?action=smart_parse      智能解析文本
  */
 
-if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/session_boot.php';
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
@@ -240,24 +240,32 @@ if ($action === 'query') {
         $params[] = '%' . escape_like_query($q) . '%';
     }
 
-    $stmt = db()->prepare("
-        SELECT p.id, p.name, p.phone, p.courier_id, p.service_type, p.tracking_number,
-               p.address, p.status, p.note, p.images, p.created_at,
-               c.name AS courier_name, u.username AS manager_name
-        FROM parcels p
-        LEFT JOIN couriers c ON c.id = p.courier_id AND c.deleted_at IS NULL
-        LEFT JOIN users u    ON u.id = p.manager_id AND u.deleted_at IS NULL
-        WHERE " . implode(' AND ', $where) . "
-        ORDER BY p.created_at DESC
-        LIMIT 50
-    ");
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll();
+    // 前台查快递不需要登录，客户很可能短时间内对同一个单号/姓名重复点查询（网络
+    // 波动重试、切到别的 App 又切回来），缓存 45 秒——这个输出跟谁在查无关（手机号
+    // 已经在下面统一脱敏，不存在"缓存了别人能看到的完整手机号"这种权限泄漏问题），
+    // 缓存 key 按实际用到的查询条件（where 子句 + 参数）算，条件不同天然不会撞。
+    $cacheKey = 'parcels:query:' . md5(implode('|', $where) . '::' . implode('|', $params));
+    $rows = cache_remember($cacheKey, 45, function () use ($where, $params) {
+        $stmt = db()->prepare("
+            SELECT p.id, p.name, p.phone, p.courier_id, p.service_type, p.tracking_number,
+                   p.address, p.status, p.note, p.images, p.created_at,
+                   c.name AS courier_name, u.username AS manager_name
+            FROM parcels p
+            LEFT JOIN couriers c ON c.id = p.courier_id AND c.deleted_at IS NULL
+            LEFT JOIN users u    ON u.id = p.manager_id AND u.deleted_at IS NULL
+            WHERE " . implode(' AND ', $where) . "
+            ORDER BY p.created_at DESC
+            LIMIT 50
+        ");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
 
-    foreach ($rows as &$r) {
-        $r['phone']  = mask_phone($r['phone']);
-        $r['images'] = json_decode($r['images'] ?? '[]', true);
-    }
+        foreach ($rows as &$r) {
+            $r['phone']  = mask_phone($r['phone']);
+            $r['images'] = json_decode($r['images'] ?? '[]', true);
+        }
+        return $rows;
+    });
     json_out(['ok' => true, 'data' => $rows]);
 
     $q = trim($_GET['q'] ?? '');

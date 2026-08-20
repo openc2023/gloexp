@@ -10,9 +10,7 @@
  * POST ?action=reset_pwd&id=
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/session_boot.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -75,8 +73,12 @@ function ensure_assignable_group(array $actor, $groupId): void {
 }
 
 if ($action === 'dropdown') {
-    $stmt = db()->query("SELECT id, username FROM users WHERE deleted_at IS NULL ORDER BY username ASC");
-    json_out(['ok' => true, 'data' => $stmt->fetchAll()]);
+    // 负责人下拉——每个新增/编辑表单打开都要查一次，只有新建/改名/删除账号才会变，
+    // 缓存 5 分钟（Redis 不可用时自动退化成每次都查 SQLite，跟原来一样）。
+    $rows = cache_remember('managers:dropdown', 300, function () {
+        return db()->query("SELECT id, username FROM users WHERE deleted_at IS NULL ORDER BY username ASC")->fetchAll();
+    });
+    json_out(['ok' => true, 'data' => $rows]);
 }
 
 if ($action === 'list') {
