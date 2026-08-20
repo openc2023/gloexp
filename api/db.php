@@ -571,11 +571,15 @@ function method_must(string ...$methods): void {
     }
 }
 
-// 自动清理超过 2 个月的软删除记录（每次请求有 5% 概率触发，减少性能损耗）
+// 自动清理超过 3 个月的软删除记录 + 超过 3 个月的操作日志（每次请求有 5% 概率
+// 触发，减少性能损耗——不用每个请求都跑一遍清理逻辑）。
+// 之前这里被 getenv('EXP_INLINE_GC') !== '1' 挡住了，等于没设这个环境变量的话
+// 这个函数永远直接返回、什么都不做——正常的共享主机部署基本不会有人专门去设
+// 这个变量，所以"回收站 2 个月自动清理"这句话实际上从来没真正生效过，被删除的
+// 记录和关联图片一直堆在数据库和磁盘里。现在去掉这道没意义的门槛。
 function maybe_gc(): void {
-    if (getenv('EXP_INLINE_GC') !== '1') return;
     if (mt_rand(1, 20) !== 1) return;
-    $cutoff = date('Y-m-d H:i:s', strtotime('-2 months'));
+    $cutoff = date('Y-m-d H:i:s', strtotime('-3 months'));
     $db = db();
     // 删除过期 parcels 的关联图片
     $rows = $db->prepare("SELECT images FROM parcels WHERE deleted_at IS NOT NULL AND deleted_at < ?");
@@ -589,4 +593,7 @@ function maybe_gc(): void {
     }
     $db->prepare("DELETE FROM parcels WHERE deleted_at IS NOT NULL AND deleted_at < ?")->execute([$cutoff]);
     $db->prepare("DELETE FROM users  WHERE deleted_at IS NOT NULL AND deleted_at < ?")->execute([$cutoff]);
+    // 操作日志之前完全没有自动清理，只有手动"清空日志"（一次性全清）。这里加上
+    // 按时间自动清理，跟回收站用同一个 3 个月的口径、同一次触发一起做。
+    $db->prepare("DELETE FROM operation_logs WHERE created_at < ?")->execute([$cutoff]);
 }
