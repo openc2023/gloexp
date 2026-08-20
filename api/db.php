@@ -416,6 +416,13 @@ function db(): PDO {
         // 部分走普通读，不会出错。
         $pdo->exec('PRAGMA synchronous=NORMAL;');
         $pdo->exec('PRAGMA mmap_size=268435456;');
+        // busy_timeout：SQLite 同一时刻只能有一个写操作在进行，默认没设这个的话，
+        // 抢不到写锁的请求会立刻抛 SQLITE_BUSY 异常，不会等——压测时发现的真实
+        // 问题：多个并发请求同时更新同一个账号的 last_active_at（比如同一账号被
+        // 多人同时登录），抢不到锁的那几个直接报了个没被 catch 住的致命错误，
+        // 变成一个不知所云的 500。改成等 5 秒再放弃，绝大多数并发写入场景下
+        // 5 秒内锁早就释放了，请求会自动排队等一下，而不是直接报错。
+        $pdo->exec('PRAGMA busy_timeout=5000;');
         // ── 自动迁移（向后兼容，按需添加字段/表）─────────────────
         // v5.0: users 首次登录改密标记
         try { $pdo->exec("ALTER TABLE users ADD COLUMN must_change_pwd INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
