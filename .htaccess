@@ -20,3 +20,31 @@ Options -Indexes
 
 # ── 字符集 ───────────────────────────────────────────────────
 AddDefaultCharset UTF-8
+
+# ── 静态资源长效缓存 ─────────────────────────────────────────
+# assets/ 下的 CSS/JS 每次改动都会在 HTML 里手动带上 ?v=xxxxx 版本号做缓存失效
+# （内容变了 URL 才变），所以可以放心给一个很长的缓存期——浏览器第一次拿到某个
+# 版本就会一直用本地缓存，不会再问服务器要，同一个人反复打开页面不会再产生
+# 对这些文件的磁盘读。uploads/ 里的图片文件名是上传时随机生成的、内容不会原地
+# 修改（删除是另建新文件名），同样可以放心长缓存。HTML 页面本身不在这条规则里，
+# 每次都要向服务器要最新的，不然改完代码用户看到的还是旧页面。
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/javascript "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType application/wasm "access plus 1 year"
+  ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(css|js|wasm|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(jpe?g|png|webp|svg|gif)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>

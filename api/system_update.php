@@ -32,7 +32,7 @@ define('VERSION_FILE', __DIR__ . '/../data/VERSION');
 define('BACKUP_DIR', __DIR__ . '/../data/backups');
 // 更新/备份/回滚只触碰这些路径——白名单，data/ uploads/ .git 永远不在里面。
 define('DEPLOY_PATHS', [
-    'api', 'assets', '.htaccess', 'install.php',
+    'api', 'assets', '.htaccess', '.user.ini', 'install.php',
     'index.html', 'login.html', 'inbound.html', 'outbound.html',
     'team.html', 'couriers.html', 'trash.html', 'logs.html', 'track.html',
 ]);

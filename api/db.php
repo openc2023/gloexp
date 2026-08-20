@@ -407,6 +407,15 @@ function db(): PDO {
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $pdo->exec('PRAGMA journal_mode=WAL;');
         $pdo->exec('PRAGMA foreign_keys=ON;');
+        // synchronous=NORMAL：WAL 模式下这个设置能减少每次写入强制刷盘（fsync）的
+        // 次数，代价是极端断电场景下可能丢最后一笔还没落盘的事务，但不会损坏数据库
+        // 本身（WAL 保证这个）——高并发写入时磁盘压力会明显小一些，用不丢数据换
+        // 一点点这种极端情况下的风险，是常见的合理取舍。
+        // mmap_size：把数据库文件映射进内存读，减少重复的 read() 系统调用；
+        // 256MB 对现在的数据规模足够，就算以后数据变大也只是退化成部分走 mmap、
+        // 部分走普通读，不会出错。
+        $pdo->exec('PRAGMA synchronous=NORMAL;');
+        $pdo->exec('PRAGMA mmap_size=268435456;');
         // ── 自动迁移（向后兼容，按需添加字段/表）─────────────────
         // v5.0: users 首次登录改密标记
         try { $pdo->exec("ALTER TABLE users ADD COLUMN must_change_pwd INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
