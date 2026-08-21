@@ -180,7 +180,8 @@ function touch_last_active(int $uid, bool $force = false): void {
         return;
     }
 
-    db()->prepare("UPDATE users SET last_active_at = datetime('now','localtime') WHERE id = ?")->execute([$uid]);
+    $stmt = db()->prepare("UPDATE users SET last_active_at = datetime('now','localtime') WHERE id = ?");
+    sqlite_retry(fn() => $stmt->execute([$uid]));
     $_SESSION['last_active_touch'] = $now;
 }
 

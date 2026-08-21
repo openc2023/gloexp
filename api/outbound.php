@@ -276,7 +276,8 @@ if ($action === 'update') {
     $fields[] = "updated_at = datetime('now','localtime')";
     $params[] = $id;
 
-    db()->prepare("UPDATE parcels SET " . implode(', ', $fields) . " WHERE id = ? AND source = 'inbound' AND deleted_at IS NULL")->execute($params);
+    $stmt = db()->prepare("UPDATE parcels SET " . implode(', ', $fields) . " WHERE id = ? AND source = 'inbound' AND deleted_at IS NULL");
+    sqlite_retry(fn() => $stmt->execute($params));
     $s = db()->prepare("SELECT name FROM parcels WHERE id = ? LIMIT 1"); $s->execute([$id]);
     write_log($user, '编辑', '快递管理', $id, (string)($s->fetchColumn() ?: ($record['name'] ?? '')));
     json_out(['ok' => true]);

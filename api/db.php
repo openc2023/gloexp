@@ -63,6 +63,29 @@ function cache_remember(string $key, int $ttlSeconds, callable $compute): array 
     return $value;
 }
 
+// SQLite 整个库同一时刻只能有一个写事务，busy_timeout 只保证排队等一等，队列本身
+// 排太满还是会等到超时被拒绝（真实案例：早高峰多人同时登录+改单号，写请求瞬间
+// 堆积超过 busy_timeout 窗口）。对这类瞬时冲突加一层短退避重试，比单纯拉长
+// busy_timeout 更有效——只重试"database is locked"这一种异常，其他 DB 错误
+// （约束冲突、语法错误等）重试没有意义，直接照常抛出。
+function sqlite_retry(callable $fn, int $maxRetries = 2) {
+    $attempt = 0;
+    while (true) {
+        try {
+            return $fn();
+        } catch (\PDOException $e) {
+            $msg = $e->getMessage();
+            $isLocked = str_contains($msg, 'database is locked')
+                || str_contains($msg, 'database table is locked');
+            if (!$isLocked || $attempt >= $maxRetries) {
+                throw $e;
+            }
+            $attempt++;
+            usleep($attempt === 1 ? 150000 : 400000);
+        }
+    }
+}
+
 function decode_permission_json($raw): array {
     if (is_array($raw)) {
         return array_values(array_filter($raw, 'is_string'));
@@ -422,7 +445,7 @@ function db(): PDO {
         // 多人同时登录），抢不到锁的那几个直接报了个没被 catch 住的致命错误，
         // 变成一个不知所云的 500。改成等 5 秒再放弃，绝大多数并发写入场景下
         // 5 秒内锁早就释放了，请求会自动排队等一下，而不是直接报错。
-        $pdo->exec('PRAGMA busy_timeout=5000;');
+        $pdo->exec('PRAGMA busy_timeout=8000;');
         // ── 自动迁移（向后兼容，按需添加字段/表）─────────────────
         // v5.0: users 首次登录改密标记
         try { $pdo->exec("ALTER TABLE users ADD COLUMN must_change_pwd INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
