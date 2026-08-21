@@ -812,40 +812,49 @@ function closeFillModal() {
 
 async function submitFill(e) {
   e.preventDefault();
-  const id = document.getElementById('fl-id').value;
-  const name = document.getElementById('fl-name').value.trim();
-  const status = document.getElementById('fl-status').value;
-  const tracking = document.getElementById('fl-tracking').value.trim();
-  if (!name) { toast('姓名必填', 'err'); return; }
-  if (status === 'shipped') {
-    if (!tracking) { toast('已邮寄状态需要填写快递单号', 'err'); return; }
-    if (tracking.length < 4 || tracking.length > 40) { toast('快递单号长度需为 4-40 字符', 'err'); return; }
-    const duplicateCheck = await checkOutboundTrackingDuplicate(tracking.toUpperCase(), id);
-    if (duplicateCheck.blocked) return;
-    if (duplicateCheck.exists) {
-      toast(duplicateTrackingMessage(tracking, duplicateCheck.data), 'err', 5200);
-      return;
-    }
+  const submitBtn = e.currentTarget.querySelector('button[type="submit"]');
+  if (submitBtn?.dataset.saving === '1') return;
+  const oldText = submitBtn?.textContent;
+  if (submitBtn) {
+    submitBtn.dataset.saving = '1';
+    submitBtn.disabled = true;
+    submitBtn.textContent = '保存中…';
   }
 
-  const original = getRow(id);
-  const wasPending = original?.status === 'pending-ship';
-  const body = {
-    name,
-    phone: document.getElementById('fl-phone').value.trim(),
-    manager_id: document.getElementById('fl-manager').value || null,
-    category: document.getElementById('fl-category').value,
-    courier_id: document.getElementById('fl-courier').value || null,
-    service_type: document.getElementById('fl-service').value,
-    tracking_number: tracking,
-    address: document.getElementById('fl-address').value.trim(),
-    status,
-    note: document.getElementById('fl-note').value.trim(),
-    internal_note: document.getElementById('fl-internal-note').value.trim(),
-    images: OB.fillImages,
-  };
-
   try {
+    const id = document.getElementById('fl-id').value;
+    const name = document.getElementById('fl-name').value.trim();
+    const status = document.getElementById('fl-status').value;
+    const tracking = document.getElementById('fl-tracking').value.trim();
+    if (!name) { toast('姓名必填', 'err'); return; }
+    if (status === 'shipped') {
+      if (!tracking) { toast('已邮寄状态需要填写快递单号', 'err'); return; }
+      if (tracking.length < 4 || tracking.length > 40) { toast('快递单号长度需为 4-40 字符', 'err'); return; }
+      const duplicateCheck = await checkOutboundTrackingDuplicate(tracking.toUpperCase(), id);
+      if (duplicateCheck.blocked) return;
+      if (duplicateCheck.exists) {
+        toast(duplicateTrackingMessage(tracking, duplicateCheck.data), 'err', 5200);
+        return;
+      }
+    }
+
+    const original = getRow(id);
+    const wasPending = original?.status === 'pending-ship';
+    const body = {
+      name,
+      phone: document.getElementById('fl-phone').value.trim(),
+      manager_id: document.getElementById('fl-manager').value || null,
+      category: document.getElementById('fl-category').value,
+      courier_id: document.getElementById('fl-courier').value || null,
+      service_type: document.getElementById('fl-service').value,
+      tracking_number: tracking,
+      address: document.getElementById('fl-address').value.trim(),
+      status,
+      note: document.getElementById('fl-note').value.trim(),
+      internal_note: document.getElementById('fl-internal-note').value.trim(),
+      images: OB.fillImages,
+    };
+
     if (wasPending && status === 'shipped') {
       await Api.api('outbound', 'fill', { method: 'POST', params: { id }, body });
     } else {
@@ -868,7 +877,14 @@ async function submitFill(e) {
     } else {
       loadOutboundList();
     }
-  } catch (e) { /* toast shown */ }
+  } catch (e) { /* toast shown */
+  } finally {
+    if (submitBtn) {
+      submitBtn.dataset.saving = '0';
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldText;
+    }
+  }
 }
 
 // ── 导出 CSV：可选列，记住上次选择（对齐 v5 exportOutbound 的字段集）────
