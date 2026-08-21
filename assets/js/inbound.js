@@ -230,8 +230,16 @@ function resetCreateForm() {
 
 async function submitCreate(e) {
   e.preventDefault();
+  const submitBtn = e.currentTarget.querySelector('button[type="submit"]');
+  if (submitBtn?.dataset.saving === '1') return;
   const name = document.getElementById('ib-name').value.trim();
   if (!name) { toast('姓名必填', 'err'); return; }
+  const oldText = submitBtn?.textContent;
+  if (submitBtn) {
+    submitBtn.dataset.saving = '1';
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中…';
+  }
   const body = {
     name,
     phone: document.getElementById('ib-phone').value.trim(),
@@ -249,7 +257,14 @@ async function submitCreate(e) {
     await Api.api('inbound', 'create', { method: 'POST', body });
     toast('入库成功，可在「快递管理」中继续处理', 'ok');
     resetCreateForm();
-  } catch (e) { /* toast shown */ }
+  } catch (e) { /* toast shown */
+  } finally {
+    if (submitBtn) {
+      submitBtn.dataset.saving = '0';
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldText;
+    }
+  }
 }
 
 // 一次粘贴多条记录时（客服常见操作：把当天所有订单一起复制），逐字段解析会把不同客户的
